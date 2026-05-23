@@ -8,9 +8,9 @@
 
 import { dataUrlToBase64, mimeFromDataUrl } from './image';
 
-const TEXT_MODEL   = 'gemini-2.5-flash-preview-05-20';
-const VISION_MODEL = 'gemini-2.5-flash-preview-05-20'; // mismo modelo, soporta multimodal
-const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const TEXT_MODEL   = 'gemini-2.0-flash-001';
+const VISION_MODEL = 'gemini-2.0-flash-001'; // mismo modelo, soporta multimodal
+const API_BASE = 'https://generativelanguage.googleapis.com/v1/models';
 const STORAGE_KEY = 'calcal:gemini_key';
 
 // ---------- API key ----------
