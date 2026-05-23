@@ -10,14 +10,14 @@ import { GOALS } from '../lib/nutrition';
 export default function Profile() {
   const nav = useNavigate();
   const user = useAuthStore((s) => s.user);
-  const logout = useAuthStore((s) => s.logout);
+  const signOut = useAuthStore((s) => s.signOut);
   const profile = useUserStore((s) => s.profile);
   const targets = useUserStore((s) => s.computed);
   const streak = useFoodStore((s) => s.streakData);
 
-  function handleLogout() {
-    logout();
-    nav('/login');
+  async function handleLogout() {
+    await signOut();
+    nav('/login', { replace: true });
   }
 
   return (
@@ -26,9 +26,13 @@ export default function Profile() {
 
       <div className="px-5 space-y-4">
         <Card className="p-5 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-lime flex items-center justify-center text-white">
-            <User size={26} />
-          </div>
+          {user?.avatar ? (
+            <img src={user.avatar} alt="" className="w-14 h-14 rounded-2xl object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-lime flex items-center justify-center text-white">
+              <User size={26} />
+            </div>
+          )}
           <div className="min-w-0">
             <p className="font-bold text-lg truncate">{profile.name || user?.email || 'Usuario'}</p>
             <p className="text-xs text-white/50 truncate">{user?.email}</p>

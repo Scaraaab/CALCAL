@@ -71,7 +71,8 @@ export default defineConfig({
           vendor:    ['react', 'react-dom', 'react-router-dom'],
           charts:    ['recharts'],
           animation: ['framer-motion'],
-          icons:     ['lucide-react']
+          icons:     ['lucide-react'],
+          supabase:  ['@supabase/supabase-js']
         }
       }
     }

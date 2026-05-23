@@ -1,25 +1,27 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { targetCalories, targetMacros, recommendedPace } from '../lib/nutrition';
+import { upsertProfile } from '../lib/db';
 
 const defaultProfile = {
   onboarded: false,
   name: '',
   age: 28,
-  sex: 'male',          // 'male' | 'female'
+  sex: 'male',
   heightCm: 175,
   weightKg: 75,
   startWeightKg: 75,
-  activity: 'moderate', // sedentary | light | moderate | high | athlete
-  goal: 'maintain',     // cut | maintain | bulk
+  activity: 'moderate',
+  goal: 'maintain',
   experience: 'intermediate',
   mealsPerDay: 4,
-  restrictions: [],     // ['vegetariano','vegano','sin gluten','sin lactosa','keto']
-  calorieDelta: null,   // override manual sobre el goal default
+  restrictions: [],
+  calorieDelta: null,
   units: 'metric',
   waterDailyGoalMl: 2500
 };
 
+// El cache local sigue activo para offline + arranque rápido. Server gana en login.
 export const useUserStore = create(
   persist(
     (set, get) => ({
@@ -30,6 +32,7 @@ export const useUserStore = create(
         const next = { ...get().profile, ...patch };
         const computed = targetMacros(next);
         set({ profile: next, computed });
+        upsertProfile(next); // write-through (fire-and-forget)
       },
 
       completeOnboarding: (data) => {
@@ -41,12 +44,17 @@ export const useUserStore = create(
         };
         const computed = targetMacros(next);
         set({ profile: next, computed });
+        upsertProfile(next);
       },
 
-      recomputeTargets: () => {
-        const p = get().profile;
-        set({ computed: targetMacros(p) });
+      // Reemplaza completamente el profile (usado al hidratar desde Supabase)
+      replaceProfile: (serverProfile) => {
+        if (!serverProfile) return;
+        const next = { ...defaultProfile, ...serverProfile };
+        set({ profile: next, computed: targetMacros(next) });
       },
+
+      recomputeTargets: () => set({ computed: targetMacros(get().profile) }),
 
       pace: () => recommendedPace(get().profile),
       tdee: () => targetCalories({ ...get().profile, calorieDelta: 0 }),
