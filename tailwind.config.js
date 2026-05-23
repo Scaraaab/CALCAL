@@ -48,6 +48,14 @@ export default {
       borderRadius: {
         '4xl': '2rem'
       },
+      spacing: {
+        // Safe-area insets para notch / status bar / home indicator.
+        // Devuelven 0px cuando no aplica (Android sin notch, desktop, etc.)
+        'safe-top':    'env(safe-area-inset-top, 0px)',
+        'safe-bottom': 'env(safe-area-inset-bottom, 0px)',
+        'safe-left':   'env(safe-area-inset-left, 0px)',
+        'safe-right':  'env(safe-area-inset-right, 0px)'
+      },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',
         'slide-up': 'slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1)',

@@ -12,7 +12,7 @@ const items = [
 export default function BottomNav() {
   const nav = useNavigate();
   return (
-    <nav className="fixed bottom-0 inset-x-0 z-30 px-3 pb-[max(0.5rem,var(--safe-bottom))] pt-1">
+    <nav className="fixed bottom-0 inset-x-0 z-30 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-1">
       <div className="relative max-w-md mx-auto">
         {/* Wrapper de posicionamiento (Tailwind) — el motion va dentro para no chocar con transforms */}
         <div className="absolute left-1/2 -translate-x-1/2 -top-7 z-10">

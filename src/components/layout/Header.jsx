@@ -4,7 +4,7 @@ import { ChevronLeft, Settings, User } from 'lucide-react';
 export default function Header({ title, subtitle, back, action, right }) {
   const nav = useNavigate();
   return (
-    <header className="safe-top px-5 pt-4 pb-3 flex items-center gap-3">
+    <header className="px-5 pt-4 pb-3 flex items-center gap-3">
       {back && (
         <button
           onClick={() => nav(-1)}

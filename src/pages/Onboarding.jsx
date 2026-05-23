@@ -42,7 +42,7 @@ export default function Onboarding() {
   }
 
   return (
-    <div className="min-h-screen max-w-md mx-auto px-5 pt-10 pb-10 flex flex-col safe-top">
+    <div className="min-h-screen max-w-md mx-auto px-5 pb-10 flex flex-col pt-[calc(env(safe-area-inset-top)+2.5rem)]">
       {/* Progress */}
       <div className="flex gap-1 mb-8">
         {steps.map((_, i) => (

@@ -119,7 +119,7 @@ export default function Coach() {
         )}
       </div>
 
-      <div className="fixed bottom-0 inset-x-0 z-20 px-3 pb-[max(0.5rem,var(--safe-bottom))] pt-2 bg-gradient-to-t from-ink-950 via-ink-950 to-transparent">
+      <div className="fixed bottom-0 inset-x-0 z-20 px-3 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 bg-gradient-to-t from-ink-950 via-ink-950 to-transparent">
         <div className="max-w-md mx-auto flex gap-2">
           <input
             value={text}

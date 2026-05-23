@@ -4,8 +4,6 @@
 
 :root {
   color-scheme: dark;
-  --safe-top: env(safe-area-inset-top, 0px);
-  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 html, body, #root {
@@ -69,8 +67,6 @@ body {
   .skeleton {
     @apply rounded-2xl bg-gradient-to-r from-ink-700 via-ink-600 to-ink-700 bg-[length:200%_100%] animate-shimmer;
   }
-  .safe-top { padding-top: max(1rem, var(--safe-top)); }
-  .safe-bottom { padding-bottom: max(1rem, var(--safe-bottom)); }
 }
 
 @layer utilities {

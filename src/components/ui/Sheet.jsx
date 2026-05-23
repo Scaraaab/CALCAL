@@ -48,7 +48,7 @@ export default function Sheet({ open, onClose, title, children, footer }) {
               </div>
             )}
             <div className="overflow-y-auto px-5 pb-4 flex-1">{children}</div>
-            {footer && <div className="px-5 pt-3 pb-6 border-t border-white/5 safe-bottom">{footer}</div>}
+            {footer && <div className="px-5 pt-3 border-t border-white/5 pb-[calc(env(safe-area-inset-bottom)+1.5rem)]">{footer}</div>}
           </motion.div>
         </>
       )}

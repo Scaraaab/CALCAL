@@ -27,7 +27,7 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col px-6 pt-16 pb-10 max-w-md mx-auto safe-top">
+    <div className="min-h-screen flex flex-col px-6 pb-10 max-w-md mx-auto pt-[calc(env(safe-area-inset-top)+4rem)]">
       <div className="flex-1 flex flex-col justify-center">
         <div className="w-16 h-16 mb-6 rounded-3xl bg-gradient-to-br from-brand-500 to-lime flex items-center justify-center shadow-glow">
           <Sparkles size={28} className="text-white" />
