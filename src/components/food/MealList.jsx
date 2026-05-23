@@ -13,7 +13,8 @@ const MEAL_ICONS = {
 export default function MealList({ entries = [], date, readOnly = false }) {
   const removeEntry = useFoodStore((s) => s.removeEntry);
   const toggleFavorite = useFoodStore((s) => s.toggleFavorite);
-  const isFavorite = useFoodStore((s) => s.isFavorite);
+  const favorites = useFoodStore((s) => s.favorites);
+  const isFavorite = (name) => favorites.some((f) => f.name?.toLowerCase() === (name || '').toLowerCase());
 
   if (!entries.length) return null;
 

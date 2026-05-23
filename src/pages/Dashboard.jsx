@@ -14,10 +14,12 @@ import { useFoodStore } from '../store/useFoodStore';
 import { useUserStore } from '../store/useUserStore';
 import { totalsFromEntries } from '../lib/nutrition';
 import { todayISO, formatHuman } from '../utils/date';
+import { EMPTY_ARRAY } from '../lib/storage';
 
 export default function Dashboard() {
   const today = todayISO();
-  const entries = useFoodStore((s) => s.entries[today] || []);
+  const allEntries = useFoodStore((s) => s.entries);
+  const entries = allEntries[today] || EMPTY_ARRAY;
   const profile = useUserStore((s) => s.profile);
   const targets = useUserStore((s) => s.computed);
   const totals = useMemo(() => totalsFromEntries(entries), [entries]);

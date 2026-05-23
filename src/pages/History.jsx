@@ -8,10 +8,12 @@ import { useFoodStore } from '../store/useFoodStore';
 import { totalsFromEntries } from '../lib/nutrition';
 import { addDays, formatHuman, todayISO } from '../utils/date';
 import { fmtNum } from '../utils/format';
+import { EMPTY_ARRAY } from '../lib/storage';
 
 export default function History() {
   const [date, setDate] = useState(todayISO());
-  const entries = useFoodStore((s) => s.entries[date] || []);
+  const allEntries = useFoodStore((s) => s.entries);
+  const entries = allEntries[date] || EMPTY_ARRAY;
   const copyDay = useFoodStore((s) => s.copyDay);
   const totals = useMemo(() => totalsFromEntries(entries), [entries]);
 

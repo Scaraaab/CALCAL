@@ -6,10 +6,12 @@ import { motion } from 'framer-motion';
 
 export default function WaterTracker() {
   const today = todayISO();
-  const water = useFoodStore((s) => s.water[today] || 0);
+  const allWater = useFoodStore((s) => s.water);
+  const water = allWater[today] || 0;
   const addWater = useFoodStore((s) => s.addWater);
   const setWater = useFoodStore((s) => s.setWater);
-  const goal = useUserStore((s) => s.profile.waterDailyGoalMl || 2500);
+  const waterGoal = useUserStore((s) => s.profile.waterDailyGoalMl);
+  const goal = waterGoal || 2500;
   const pct = Math.min(100, Math.round((water / goal) * 100));
   const cups = Math.round(water / 250);
   const cupsGoal = Math.ceil(goal / 250);

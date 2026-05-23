@@ -110,22 +110,6 @@ export const useFoodStore = create(
           }));
         }
       },
-      isFavorite: (name) => get().favorites.some((f) => f.name?.toLowerCase() === (name || '').toLowerCase()),
-
-      // ---- FREQUENT (computed) ----
-      frequentFoods: () => {
-        const counts = {};
-        Object.values(get().entries).forEach((arr) => {
-          arr.forEach((e) => {
-            const key = (e.name || '').toLowerCase();
-            if (!key) return;
-            counts[key] = counts[key] || { ...e, count: 0 };
-            counts[key].count++;
-          });
-        });
-        return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 12);
-      },
-
       // ---- STREAK ----
       _bumpStreak: (date) => {
         const s = get().streakData;
@@ -166,16 +150,7 @@ export const useFoodStore = create(
       addShoppingItem: (name) => set((s) => ({
         shoppingList: [...s.shoppingList, { id: uuid(), name, done: false }]
       })),
-      clearShopping: () => set({ shoppingList: [] }),
-
-      // ---- DERIVED ----
-      entriesByDate: (date) => get().entries[date] || [],
-      waterByDate: (date) => get().water[date] || 0,
-      latestWeight: () => {
-        const ws = get().weights;
-        if (!ws.length) return null;
-        return [...ws].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-      }
+      clearShopping: () => set({ shoppingList: [] })
     }),
     {
       name: 'calcal:food',

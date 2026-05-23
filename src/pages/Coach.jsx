@@ -7,6 +7,7 @@ import { useUserStore } from '../store/useUserStore';
 import { coachChat, hasApiKey } from '../lib/claude';
 import { totalsFromEntries } from '../lib/nutrition';
 import { todayISO } from '../utils/date';
+import { EMPTY_ARRAY } from '../lib/storage';
 import { Link } from 'react-router-dom';
 
 const SUGGESTIONS = [
@@ -19,7 +20,8 @@ const SUGGESTIONS = [
 export default function Coach() {
   const profile = useUserStore((s) => s.profile);
   const targets = useUserStore((s) => s.computed);
-  const todayEntries = useFoodStore((s) => s.entries[todayISO()] || []);
+  const allEntries = useFoodStore((s) => s.entries);
+  const todayEntries = allEntries[todayISO()] || EMPTY_ARRAY;
   const weights = useFoodStore((s) => s.weights);
   const latestWeight = weights.length ? [...weights].sort((a, b) => new Date(b.date) - new Date(a.date))[0] : null;
   const streak = useFoodStore((s) => s.streakData);

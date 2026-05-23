@@ -1,6 +1,10 @@
 // Helpers de localStorage seguros con prefix
 const PREFIX = 'calcal:';
 
+// Referencias estables para fallbacks en selectores Zustand (evita React #185)
+export const EMPTY_ARRAY = Object.freeze([]);
+export const EMPTY_OBJECT = Object.freeze({});
+
 export const storage = {
   get(key, fallback = null) {
     try {
