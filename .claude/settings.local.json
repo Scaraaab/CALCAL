@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir \"C:\\\\Users\\\\scara\\\\Desktop\\\\CALCAL\")",
+      "Bash(dir \"C:\\\\Users\\\\scara\\\\.claude\\\\projects\\\\C--Users-scara-Desktop-CALCAL\\\\memory\")",
+      "PowerShell(node --version)",
+      "PowerShell(npm --version)",
+      "Bash(npm --version)",
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(node scripts/gen-icons.mjs)"
+    ]
+  }
+}
