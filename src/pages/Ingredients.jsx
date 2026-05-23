@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Plus, Search, Trash2, Pencil, Carrot } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Plus, Search, Trash2, Pencil, Carrot, Camera, Sparkles, Loader2, ImageIcon, ScanLine, X } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -8,6 +8,8 @@ import Sheet from '../components/ui/Sheet';
 import Segmented from '../components/ui/Segmented';
 import EmptyState from '../components/ui/EmptyState';
 import { useFoodStore } from '../store/useFoodStore';
+import { compressImage } from '../lib/image';
+import { analyzeNutritionLabel, hasApiKey } from '../lib/claude';
 import { fmtNum } from '../utils/format';
 
 const MEASURE_OPTIONS = [
@@ -17,7 +19,7 @@ const MEASURE_OPTIONS = [
 ];
 
 const EMPTY_FORM = {
-  name: '', measureType: 'per100g', servingLabel: '',
+  name: '', measureType: 'per100g', servingLabel: '', photo: null,
   kcal: '', protein: '', carbs: '', fat: '', fiber: ''
 };
 
@@ -50,6 +52,7 @@ export default function Ingredients() {
       name: ing.name,
       measureType: ing.measureType,
       servingLabel: ing.servingLabel || '',
+      photo: ing.photo || null,
       kcal: String(ing.kcal),
       protein: String(ing.protein),
       carbs: String(ing.carbs),
@@ -65,6 +68,7 @@ export default function Ingredients() {
       name: form.name.trim(),
       measureType: form.measureType,
       servingLabel: form.servingLabel.trim(),
+      photo: form.photo,
       kcal: parseFloat(form.kcal) || 0,
       protein: parseFloat(form.protein) || 0,
       carbs: parseFloat(form.carbs) || 0,
@@ -114,10 +118,8 @@ export default function Ingredients() {
         ) : (
           <div className="space-y-2">
             {filtered.map((ing) => (
-              <Card key={ing.id} className="p-4 flex items-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-brand-500/15 text-brand-300 flex items-center justify-center flex-none">
-                  <Carrot size={20} />
-                </div>
+              <Card key={ing.id} className="p-3 flex items-center gap-3">
+                <IngredientThumb ing={ing} size={48} />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold truncate capitalize">{ing.name}</p>
                   <p className="text-xs text-white/45 truncate">
@@ -156,40 +158,206 @@ export default function Ingredients() {
           </div>
         }
       >
-        <div className="space-y-4 pt-2 pb-4">
-          <Input label="Nombre" placeholder="Ej: Pan integral" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
-
-          <div>
-            <p className="label mb-2">Tipo de medida</p>
-            <Segmented
-              value={form.measureType}
-              onChange={(v) => setForm({ ...form, measureType: v })}
-              options={MEASURE_OPTIONS}
-              className="w-full"
-            />
-            <p className="text-[11px] text-white/40 mt-2 px-1">
-              {form.measureType === 'per100g' && 'Introduce los valores por cada 100 g.'}
-              {form.measureType === 'serving' && 'Introduce los valores por porción completa.'}
-              {form.measureType === 'unit'    && 'Introduce los valores por cada unidad/pieza.'}
-            </p>
-          </div>
-
-          <Input
-            label="Etiqueta de la porción (opcional)"
-            placeholder={form.measureType === 'per100g' ? '100 g' : form.measureType === 'unit' ? '1 rebanada (28g)' : '1 plato (300g)'}
-            value={form.servingLabel}
-            onChange={(e) => setForm({ ...form, servingLabel: e.target.value })}
-          />
-
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Calorías (kcal)" type="number" inputMode="decimal" step="1" value={form.kcal} onChange={(e) => setForm({ ...form, kcal: e.target.value })} />
-            <Input label="Proteína (g)" type="number" inputMode="decimal" step="0.1" value={form.protein} onChange={(e) => setForm({ ...form, protein: e.target.value })} />
-            <Input label="Carbos (g)" type="number" inputMode="decimal" step="0.1" value={form.carbs} onChange={(e) => setForm({ ...form, carbs: e.target.value })} />
-            <Input label="Grasas (g)" type="number" inputMode="decimal" step="0.1" value={form.fat} onChange={(e) => setForm({ ...form, fat: e.target.value })} />
-          </div>
-          <Input label="Fibra (g) — opcional" type="number" inputMode="decimal" step="0.1" value={form.fiber} onChange={(e) => setForm({ ...form, fiber: e.target.value })} />
-        </div>
+        <IngredientForm form={form} setForm={setForm} />
       </Sheet>
+    </div>
+  );
+}
+
+/**
+ * Avatar reutilizable del ingrediente: foto si la hay, fallback al icono de zanahoria.
+ */
+export function IngredientThumb({ ing, size = 44, className = '' }) {
+  const px = `${size}px`;
+  if (ing?.photo) {
+    return (
+      <img
+        src={ing.photo}
+        alt=""
+        className={`rounded-2xl object-cover flex-none ${className}`}
+        style={{ width: px, height: px }}
+      />
+    );
+  }
+  return (
+    <div
+      className={`rounded-2xl bg-brand-500/15 text-brand-300 flex items-center justify-center flex-none ${className}`}
+      style={{ width: px, height: px }}
+    >
+      <Carrot size={Math.round(size * 0.45)} />
+    </div>
+  );
+}
+
+// ============================================================
+//  Form interno con foto + escaneo de etiqueta + campos
+// ============================================================
+function IngredientForm({ form, setForm }) {
+  const photoInputRef = useRef(null);
+  const camInputRef = useRef(null);
+  const labelInputRef = useRef(null);
+  const [photoBusy, setPhotoBusy] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanError, setScanError] = useState('');
+  const [scanInfo, setScanInfo] = useState('');
+
+  async function onPhotoFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setPhotoBusy(true);
+    try {
+      const { dataUrl } = await compressImage(file, { maxSize: 480, quality: 0.7 });
+      setForm((f) => ({ ...f, photo: dataUrl }));
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setPhotoBusy(false);
+    }
+  }
+
+  async function onLabelFile(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!hasApiKey()) {
+      setScanError('Activa Coach IA (Gemini) en Ajustes para usar el escaneo.');
+      return;
+    }
+    setScanError('');
+    setScanInfo('');
+    setScanBusy(true);
+    try {
+      // Para OCR queremos buena resolución (Gemini necesita leer el texto)
+      const { dataUrl } = await compressImage(file, { maxSize: 1024, quality: 0.85 });
+      const res = await analyzeNutritionLabel(dataUrl);
+      const patch = {};
+      if (res.kcal    != null) patch.kcal    = String(res.kcal);
+      if (res.protein != null) patch.protein = String(res.protein);
+      if (res.carbs   != null) patch.carbs   = String(res.carbs);
+      if (res.fat     != null) patch.fat     = String(res.fat);
+      if (res.fiber   != null) patch.fiber   = String(res.fiber);
+      if (res.perWhat) patch.measureType = res.perWhat;
+      if (res.servingSize && !form.servingLabel) patch.servingLabel = res.servingSize;
+      if (Object.keys(patch).length === 0) {
+        setScanError('No detecté ningún valor en la imagen.');
+      } else {
+        setForm((f) => ({ ...f, ...patch }));
+        const found = Object.keys(patch).length;
+        setScanInfo(`${found} campo${found === 1 ? '' : 's'} autorrellenado${found === 1 ? '' : 's'}.`);
+      }
+    } catch (err) {
+      setScanError(err.message);
+    } finally {
+      setScanBusy(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4 pt-2 pb-4">
+      {/* Foto del ingrediente */}
+      <div className="flex gap-3 items-stretch">
+        <label className="relative w-28 h-28 rounded-2xl bg-gradient-to-br from-brand-500/15 to-lime/10 border border-white/5 flex items-center justify-center text-white/50 overflow-hidden flex-none cursor-pointer active:scale-[0.98] transition">
+          {form.photo ? (
+            <>
+              <img src={form.photo} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={(e) => { e.preventDefault(); setForm((f) => ({ ...f, photo: null })); }}
+                className="absolute top-1 right-1 w-7 h-7 rounded-full bg-black/60 backdrop-blur flex items-center justify-center text-white"
+                aria-label="Quitar foto"
+              >
+                <X size={14} />
+              </button>
+            </>
+          ) : photoBusy ? (
+            <Loader2 size={24} className="animate-spin" />
+          ) : (
+            <div className="flex flex-col items-center text-center px-2">
+              <Camera size={22} />
+              <span className="text-[10px] mt-1 leading-tight">Foto del<br/>ingrediente</span>
+            </div>
+          )}
+          <input ref={photoInputRef} type="file" accept="image/*" onChange={onPhotoFile} className="hidden" />
+        </label>
+
+        <div className="flex-1 min-w-0 space-y-2">
+          <Input label="Nombre" placeholder="Ej: Pan integral" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} autoFocus />
+          <div className="grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => camInputRef.current?.click()} className="btn-ghost !py-2 !text-xs !rounded-xl">
+              <Camera size={13} /> Cámara
+            </button>
+            <button type="button" onClick={() => photoInputRef.current?.click()} className="btn-ghost !py-2 !text-xs !rounded-xl">
+              <ImageIcon size={13} /> Galería
+            </button>
+          </div>
+          <input ref={camInputRef} type="file" accept="image/*" capture="environment" onChange={onPhotoFile} className="hidden" />
+        </div>
+      </div>
+
+      {/* Tipo de medida */}
+      <div>
+        <p className="label mb-2">Tipo de medida</p>
+        <Segmented
+          value={form.measureType}
+          onChange={(v) => setForm({ ...form, measureType: v })}
+          options={MEASURE_OPTIONS}
+          className="w-full"
+        />
+        <p className="text-[11px] text-white/40 mt-2 px-1">
+          {form.measureType === 'per100g' && 'Introduce los valores por cada 100 g.'}
+          {form.measureType === 'serving' && 'Introduce los valores por porción completa.'}
+          {form.measureType === 'unit'    && 'Introduce los valores por cada unidad/pieza.'}
+        </p>
+      </div>
+
+      <Input
+        label="Etiqueta de la porción (opcional)"
+        placeholder={form.measureType === 'per100g' ? '100 g' : form.measureType === 'unit' ? '1 rebanada (28g)' : '1 plato (300g)'}
+        value={form.servingLabel}
+        onChange={(e) => setForm({ ...form, servingLabel: e.target.value })}
+      />
+
+      {/* Escaneo de etiqueta nutricional */}
+      <div className="card-soft p-3 space-y-2">
+        <div className="flex items-center gap-2">
+          <div className="w-8 h-8 rounded-xl bg-brand-500/15 text-brand-300 flex items-center justify-center">
+            <ScanLine size={15} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold flex items-center gap-1.5">
+              Escanear tabla nutricional
+              {hasApiKey() && <span className="chip !text-[9px] !py-0.5 !px-1.5"><Sparkles size={10} /> IA</span>}
+            </p>
+            <p className="text-[11px] text-white/45">Foto del envase → autorellena los macros</p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => labelInputRef.current?.click()}
+          disabled={scanBusy || !hasApiKey()}
+          className="btn-primary w-full !py-2.5"
+        >
+          {scanBusy
+            ? <><Loader2 size={16} className="animate-spin" /> Leyendo etiqueta…</>
+            : <><Camera size={16} /> Escanear etiqueta</>}
+        </button>
+        <input ref={labelInputRef} type="file" accept="image/*" capture="environment" onChange={onLabelFile} className="hidden" />
+        {scanError && <p className="text-[11px] text-rose-300">{scanError}</p>}
+        {scanInfo && <p className="text-[11px] text-emerald-300">{scanInfo}</p>}
+        {!hasApiKey() && (
+          <p className="text-[11px] text-white/40">Necesitas configurar Gemini en Ajustes → Coach IA.</p>
+        )}
+      </div>
+
+      {/* Campos numéricos */}
+      <div className="grid grid-cols-2 gap-3">
+        <Input label="Calorías (kcal)" type="number" inputMode="decimal" step="1" value={form.kcal} onChange={(e) => setForm({ ...form, kcal: e.target.value })} />
+        <Input label="Proteína (g)" type="number" inputMode="decimal" step="0.1" value={form.protein} onChange={(e) => setForm({ ...form, protein: e.target.value })} />
+        <Input label="Carbos (g)" type="number" inputMode="decimal" step="0.1" value={form.carbs} onChange={(e) => setForm({ ...form, carbs: e.target.value })} />
+        <Input label="Grasas (g)" type="number" inputMode="decimal" step="0.1" value={form.fat} onChange={(e) => setForm({ ...form, fat: e.target.value })} />
+      </div>
+      <Input label="Fibra (g) — opcional" type="number" inputMode="decimal" step="0.1" value={form.fiber} onChange={(e) => setForm({ ...form, fiber: e.target.value })} />
     </div>
   );
 }

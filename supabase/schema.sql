@@ -75,8 +75,11 @@ create table if not exists public.custom_ingredients (
   carbs          numeric default 0,
   fat            numeric default 0,
   fiber          numeric default 0,
+  photo          text,
   created_at     timestamptz not null default now()
 );
+-- Migración para esquemas viejos (sin photo)
+alter table public.custom_ingredients add column if not exists photo text;
 create index if not exists custom_ingredients_user_idx on public.custom_ingredients (user_id);
 
 -- ---------- custom_meals ----------

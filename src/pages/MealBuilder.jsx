@@ -217,7 +217,8 @@ function IngredientPicker({ open, onClose, onPick }) {
       carbs:   Math.round(food.carbs   * realScale * 10) / 10,
       fat:     Math.round(food.fat     * realScale * 10) / 10,
       fiber:   Math.round((food.fiber || 0) * realScale * 10) / 10,
-      ingredientId: food.isCustom ? food.id : undefined
+      ingredientId: food.isCustom ? food.id : undefined,
+      photo: food.photo || undefined
     });
     resetAll();
   }
@@ -323,16 +324,19 @@ function ResultsList({ items, onPick }) {
         <button
           key={f.id}
           onClick={() => onPick(f)}
-          className="w-full px-3 py-2.5 rounded-xl bg-white/3 hover:bg-white/8 border border-white/5 text-left flex items-center justify-between"
+          className="w-full px-3 py-2.5 rounded-xl bg-white/3 hover:bg-white/8 border border-white/5 text-left flex items-center gap-3"
         >
-          <div className="min-w-0 flex items-center gap-2">
-            {f.isCustom && <span className="chip !py-0.5 !px-2 !text-[9px]">Mío</span>}
+          {f.photo && (
+            <img src={f.photo} alt="" className="w-9 h-9 rounded-xl object-cover flex-none" />
+          )}
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            {f.isCustom && !f.photo && <span className="chip !py-0.5 !px-2 !text-[9px]">Mío</span>}
             <div className="min-w-0">
               <p className="text-sm font-medium capitalize truncate">{f.names?.[0] || f.name}</p>
               <p className="text-[11px] text-white/40 truncate">{f.serving}</p>
             </div>
           </div>
-          <p className="text-sm font-semibold tabular-nums whitespace-nowrap pl-3">{fmtNum(f.kcal)} kcal</p>
+          <p className="text-sm font-semibold tabular-nums whitespace-nowrap">{fmtNum(f.kcal)} kcal</p>
         </button>
       ))}
     </div>
@@ -351,11 +355,17 @@ function QtyEditor({ food, qty, setQty, onCancel, onConfirm }) {
   };
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        {food.isCustom && <span className="chip !text-[10px]"><Carrot size={11} /> Mío</span>}
-        <p className="font-semibold capitalize">{food.names?.[0] || food.name}</p>
+      <div className="flex items-center gap-3">
+        {food.photo ? (
+          <img src={food.photo} alt="" className="w-12 h-12 rounded-2xl object-cover flex-none" />
+        ) : food.isCustom ? (
+          <span className="chip !text-[10px]"><Carrot size={11} /> Mío</span>
+        ) : null}
+        <div className="min-w-0">
+          <p className="font-semibold capitalize truncate">{food.names?.[0] || food.name}</p>
+          <p className="text-xs text-white/45 truncate">{food.serving}</p>
+        </div>
       </div>
-      <p className="text-xs text-white/45">{food.serving}</p>
       <div className="flex items-center justify-between bg-ink-700/60 rounded-2xl p-2">
         <button onClick={() => setQty((q) => Math.max(step, +(q - step).toFixed(2)))} className="w-10 h-10 rounded-xl bg-white/5">−</button>
         <input

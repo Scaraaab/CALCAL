@@ -123,6 +123,27 @@ Reglas:
 - Texto en español.
 - No incluyas texto fuera del JSON.`;
 
+const SYSTEM_NUTRITION_LABEL = `Eres un OCR especializado en tablas nutricionales de etiquetas de alimentos.
+Analiza la foto y extrae los valores de la tabla "Información nutricional".
+Devuelve SOLO JSON válido con esta forma:
+{
+  "kcal": número entero (energía en kcal),
+  "protein": número (proteínas en gramos),
+  "carbs": número (hidratos de carbono en gramos),
+  "fat": número (grasas en gramos),
+  "fiber": número (fibra en gramos, opcional),
+  "servingSize": "texto descriptivo (ej: '100 g', '1 vaso 240ml', '1 yogur 125g')",
+  "perWhat": "per100g" | "serving" | "unit"
+}
+Reglas:
+- Si la tabla muestra "Por 100 g" o "Per 100g" → perWhat = "per100g".
+- Si muestra valores por porción/ración (ej: "Por porción", "Per serving") → perWhat = "serving" y servingSize con la cantidad.
+- Si valores por unidad/pieza → perWhat = "unit".
+- Si solo hay un valor energético en kJ, conviértelo a kcal (kJ ÷ 4.184).
+- Si un valor no es claro o no aparece, omítelo del JSON (no inventes).
+- Decimales con punto, no coma.
+- No incluyas texto fuera del JSON.`;
+
 // ---------- Coach (chat) ----------
 export async function coachChat(messages, userContext = '') {
   const system = userContext
@@ -241,4 +262,56 @@ function normalizeItem(it) {
     fat:     Math.round((Number(it.fat)     || 0) * 10) / 10,
     fiber:   Math.round((Number(it.fiber)   || 0) * 10) / 10
   };
+}
+
+// ---------- Vision: OCR de tabla nutricional ----------
+/**
+ * Lee una etiqueta nutricional y extrae los macros para autorrellenar el form.
+ * @param {string} dataUrl - foto de la tabla (data URL)
+ * @returns {Promise<{kcal?:number, protein?:number, carbs?:number, fat?:number,
+ *                    fiber?:number, servingSize?:string, perWhat?:string}>}
+ */
+export async function analyzeNutritionLabel(dataUrl) {
+  if (!dataUrl) throw new Error('No hay imagen para analizar');
+
+  const out = await callGemini({
+    model: VISION_MODEL,
+    systemInstruction: SYSTEM_NUTRITION_LABEL,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: 'Extrae los valores nutricionales de esta tabla.' },
+          {
+            inline_data: {
+              mime_type: mimeFromDataUrl(dataUrl),
+              data: dataUrlToBase64(dataUrl)
+            }
+          }
+        ]
+      }
+    ],
+    temperature: 0.1,
+    maxOutputTokens: 500,
+    responseMimeType: 'application/json'
+  });
+
+  const parsed = safeJsonParse(out);
+  if (!parsed) throw new Error('No pude leer la tabla nutricional. Prueba con otra foto.');
+
+  return {
+    kcal:        toNum(parsed.kcal),
+    protein:     toNum(parsed.protein),
+    carbs:       toNum(parsed.carbs),
+    fat:         toNum(parsed.fat),
+    fiber:       toNum(parsed.fiber),
+    servingSize: parsed.servingSize ? String(parsed.servingSize) : undefined,
+    perWhat:     ['per100g', 'serving', 'unit'].includes(parsed.perWhat) ? parsed.perWhat : undefined
+  };
+}
+
+function toNum(v) {
+  if (v == null || v === '') return undefined;
+  const n = Number(String(v).replace(',', '.'));
+  return isNaN(n) ? undefined : n;
 }

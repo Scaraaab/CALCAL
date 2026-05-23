@@ -266,6 +266,7 @@ function rowToIngredient(r) {
     carbs: Number(r.carbs) || 0,
     fat: Number(r.fat) || 0,
     fiber: Number(r.fiber) || 0,
+    photo: r.photo || null,
     createdAt: new Date(r.created_at).getTime()
   };
 }
@@ -282,7 +283,8 @@ function ingredientToRow(userId, i) {
     protein: i.protein,
     carbs: i.carbs,
     fat: i.fat,
-    fiber: i.fiber
+    fiber: i.fiber,
+    photo: i.photo || null
   };
 }
 

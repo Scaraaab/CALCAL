@@ -41,6 +41,7 @@ export default function FoodSearch({ onAdd }) {
       unit: active.unit === 'porcion' ? 'porción' : active.unit,
       serving: active.serving,
       ingredientId: active.isCustom ? active.id : undefined,
+      photo: active.photo || undefined, // hereda la foto del ingrediente personalizado
       kcal:    Math.round(active.kcal    * scale),
       protein: Math.round(active.protein * scale * 10) / 10,
       carbs:   Math.round(active.carbs   * scale * 10) / 10,
@@ -85,16 +86,19 @@ export default function FoodSearch({ onAdd }) {
                 <button
                   key={f.id}
                   onClick={() => { setActive(f); setQty(initialQty(f)); }}
-                  className="w-full px-3 py-2.5 rounded-xl bg-white/3 hover:bg-white/8 border border-white/5 text-left flex items-center justify-between"
+                  className="w-full px-3 py-2.5 rounded-xl bg-white/3 hover:bg-white/8 border border-white/5 text-left flex items-center gap-3"
                 >
-                  <div className="min-w-0 flex items-center gap-2">
-                    {f.isCustom && <span className="chip !text-[9px] !py-0.5 !px-2">Mío</span>}
+                  {f.photo && (
+                    <img src={f.photo} alt="" className="w-9 h-9 rounded-xl object-cover flex-none" />
+                  )}
+                  <div className="flex-1 min-w-0 flex items-center gap-2">
+                    {f.isCustom && !f.photo && <span className="chip !text-[9px] !py-0.5 !px-2">Mío</span>}
                     <div className="min-w-0">
                       <p className="text-sm font-medium capitalize truncate">{f.names[0]}</p>
                       <p className="text-xs text-white/40 truncate">{f.serving}</p>
                     </div>
                   </div>
-                  <p className="text-sm font-semibold tabular-nums whitespace-nowrap pl-3">{fmtNum(f.kcal)} kcal</p>
+                  <p className="text-sm font-semibold tabular-nums whitespace-nowrap">{fmtNum(f.kcal)} kcal</p>
                 </button>
               ))}
             </div>
@@ -109,11 +113,15 @@ export default function FoodSearch({ onAdd }) {
 
       {active && (
         <div className="space-y-3 pt-1">
-          <div className="flex items-center gap-2">
-            {active.isCustom && <span className="chip !text-[10px]">Mío</span>}
-            <div>
-              <p className="font-semibold capitalize">{active.names[0]}</p>
-              <p className="text-xs text-white/45">{active.serving}</p>
+          <div className="flex items-center gap-3">
+            {active.photo ? (
+              <img src={active.photo} alt="" className="w-12 h-12 rounded-2xl object-cover flex-none" />
+            ) : active.isCustom ? (
+              <span className="chip !text-[10px]">Mío</span>
+            ) : null}
+            <div className="min-w-0">
+              <p className="font-semibold capitalize truncate">{active.names[0]}</p>
+              <p className="text-xs text-white/45 truncate">{active.serving}</p>
             </div>
           </div>
           <div className="flex items-center justify-between bg-ink-700/60 rounded-2xl p-2">

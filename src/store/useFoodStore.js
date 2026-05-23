@@ -157,6 +157,7 @@ export const useFoodStore = create(
           carbs: Number(ing.carbs) || 0,
           fat: Number(ing.fat) || 0,
           fiber: Number(ing.fiber) || 0,
+          photo: ing.photo || null,
           createdAt: Date.now()
         };
         if (!clean.name) return null;
@@ -305,7 +306,8 @@ export function ingredientToFood(ing) {
     protein: ing.protein,
     carbs: ing.carbs,
     fat: ing.fat,
-    fiber: ing.fiber
+    fiber: ing.fiber,
+    photo: ing.photo || null
   };
 }
 
