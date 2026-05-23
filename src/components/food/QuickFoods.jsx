@@ -1,10 +1,23 @@
+import { useMemo } from 'react';
 import { Heart, Repeat2 } from 'lucide-react';
 import { useFoodStore } from '../../store/useFoodStore';
 import { fmtNum } from '../../utils/format';
 
 export default function QuickFoods({ onPick }) {
   const favorites = useFoodStore((s) => s.favorites);
-  const frequent = useFoodStore((s) => s.frequentFoods());
+  const entries = useFoodStore((s) => s.entries);
+  const frequent = useMemo(() => {
+    const counts = {};
+    Object.values(entries).forEach((arr) => {
+      arr.forEach((e) => {
+        const key = (e.name || '').toLowerCase();
+        if (!key) return;
+        counts[key] = counts[key] || { ...e, count: 0 };
+        counts[key].count++;
+      });
+    });
+    return Object.values(counts).sort((a, b) => b.count - a.count).slice(0, 12);
+  }, [entries]);
 
   if (!favorites.length && !frequent.length) return null;
 

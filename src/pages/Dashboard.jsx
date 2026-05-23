@@ -4,7 +4,6 @@ import { Sparkles, Plus, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import EmptyState from '../components/ui/EmptyState';
-import Button from '../components/ui/Button';
 import CalorieRing from '../components/dashboard/CalorieRing';
 import MacroBars from '../components/dashboard/MacroBars';
 import WaterTracker from '../components/dashboard/WaterTracker';
@@ -83,7 +82,7 @@ export default function Dashboard() {
               icon={Plus}
               title="Aún no has registrado nada"
               description="Empieza con tu primera comida del día. Puedes escribirla en lenguaje natural."
-              action={<Link to="/log"><Button variant="lime">Registrar comida</Button></Link>}
+              action={<Link to="/log" className="btn-lime">Registrar comida</Link>}
             />
           ) : (
             <MealList entries={entries} date={today} />

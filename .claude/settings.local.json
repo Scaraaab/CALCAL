@@ -8,7 +8,11 @@
       "Bash(npm --version)",
       "Bash(npm install *)",
       "Bash(npm run *)",
-      "Bash(node scripts/gen-icons.mjs)"
+      "Bash(node scripts/gen-icons.mjs)",
+      "Bash(curl -sI http://localhost:4173/)",
+      "Bash(curl -s http://localhost:4173/)",
+      "Bash(taskkill /F /FI \"WindowTitle eq npm*\")",
+      "Bash(taskkill /F /IM node.exe /FI \"MEMUSAGE gt 50000\")"
     ]
   }
 }

@@ -20,7 +20,8 @@ export default function Coach() {
   const profile = useUserStore((s) => s.profile);
   const targets = useUserStore((s) => s.computed);
   const todayEntries = useFoodStore((s) => s.entries[todayISO()] || []);
-  const latestWeight = useFoodStore((s) => s.latestWeight());
+  const weights = useFoodStore((s) => s.weights);
+  const latestWeight = weights.length ? [...weights].sort((a, b) => new Date(b.date) - new Date(a.date))[0] : null;
   const streak = useFoodStore((s) => s.streakData);
 
   const [messages, setMessages] = useState([

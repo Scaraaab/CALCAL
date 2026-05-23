@@ -1,5 +1,5 @@
-import { Scale, Plus, TrendingDown, TrendingUp, Minus } from 'lucide-react';
-import { useState } from 'react';
+import { Scale, TrendingDown, TrendingUp, Minus } from 'lucide-react';
+import { useMemo, useState } from 'react';
 import { useFoodStore } from '../../store/useFoodStore';
 import { useUserStore } from '../../store/useUserStore';
 import Sheet from '../ui/Sheet';
@@ -9,7 +9,11 @@ import { fmtKg } from '../../utils/format';
 
 export default function WeightCard() {
   const [open, setOpen] = useState(false);
-  const latest = useFoodStore((s) => s.latestWeight());
+  const weights = useFoodStore((s) => s.weights);
+  const latest = useMemo(() => {
+    if (!weights.length) return null;
+    return [...weights].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+  }, [weights]);
   const startWeight = useUserStore((s) => s.profile.startWeightKg);
   const setProfile = useUserStore((s) => s.setProfile);
   const addWeight = useFoodStore((s) => s.addWeight);

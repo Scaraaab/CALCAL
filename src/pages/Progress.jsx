@@ -20,7 +20,10 @@ export default function Progress() {
   const entries = useFoodStore((s) => s.entries);
   const weights = useFoodStore((s) => s.weights);
   const streak = useFoodStore((s) => s.streakData);
-  const latestWeight = useFoodStore((s) => s.latestWeight());
+  const latestWeight = useMemo(() => {
+    if (!weights.length) return null;
+    return [...weights].sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+  }, [weights]);
 
   const [range, setRange] = useState('7'); // 7 | 14 | 30
   const days = useMemo(() => lastNDays(parseInt(range)), [range]);
