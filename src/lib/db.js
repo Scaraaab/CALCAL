@@ -301,20 +301,47 @@ export async function fetchIngredients() {
   return (data || []).map(rowToIngredient);
 }
 
+/**
+ * Upsert con feedback explícito. Devuelve { ok, reason?, data?, error? } para que
+ * el caller pueda decidir qué hacer si falla, y loggea todo de forma muy visible.
+ */
 export async function upsertIngredient(ing) {
-  if (!isSupabaseConfigured) return;
+  if (!isSupabaseConfigured) {
+    console.error('%c[db] upsertIngredient → ABORTADO: Supabase no configurado', 'color:#ff6b9d;font-weight:bold');
+    return { ok: false, reason: 'no-supabase' };
+  }
   const userId = await currentUserId();
-  if (!userId) return;
-  const { error } = await supabase
+  if (!userId) {
+    console.error('%c[db] upsertIngredient → ABORTADO: sin user_id (no autenticado)', 'color:#ff6b9d;font-weight:bold', ing);
+    return { ok: false, reason: 'no-auth' };
+  }
+  const row = ingredientToRow(userId, ing);
+  console.log('%c[db] upsertIngredient → enviando a Supabase', 'color:#7c5cff', { id: row.id, name: row.name, user_id: row.user_id });
+  const { data, error } = await supabase
     .from('custom_ingredients')
-    .upsert(ingredientToRow(userId, ing), { onConflict: 'id' });
-  if (error) warn('upsertIngredient', error);
+    .upsert(row, { onConflict: 'id' })
+    .select(); // devuelve la fila insertada/actualizada para verificar que pasó la RLS
+  if (error) {
+    console.error('%c[db] upsertIngredient → ERROR', 'color:#ff6b9d;font-weight:bold', error.message, error);
+    return { ok: false, reason: 'rpc-error', error };
+  }
+  if (!data || data.length === 0) {
+    // Sin error pero sin filas devueltas suele significar RLS bloqueando silenciosamente
+    console.error('%c[db] upsertIngredient → 0 filas devueltas (¿RLS bloqueó?)', 'color:#ff6b9d;font-weight:bold', { sent: row });
+    return { ok: false, reason: 'no-rows', data };
+  }
+  console.log('%c[db] upsertIngredient → OK', 'color:#c8ff3d', data[0]);
+  return { ok: true, data };
 }
 
 export async function removeIngredient(id) {
-  if (!isSupabaseConfigured) return;
+  if (!isSupabaseConfigured) {
+    console.warn('[db] removeIngredient: Supabase no configurado');
+    return;
+  }
+  console.log('%c[db] removeIngredient', 'color:#7c5cff', id);
   const { error } = await supabase.from('custom_ingredients').delete().eq('id', id);
-  if (error) warn('removeIngredient', error);
+  if (error) console.error('%c[db] removeIngredient → ERROR', 'color:#ff6b9d;font-weight:bold', error.message, error);
 }
 
 // ============================================================

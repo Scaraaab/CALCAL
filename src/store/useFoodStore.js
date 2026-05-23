@@ -4,6 +4,13 @@ import { todayISO } from '../utils/date';
 import { uuid } from '../utils/format';
 import * as db from '../lib/db';
 
+// ─────────────────────────────────────────────────────────────
+//  DEBUG LOGGING
+//  Filtrable en DevTools con: [CalCal:store]
+// ─────────────────────────────────────────────────────────────
+const log = (label, ...args) => console.log(`%c[CalCal:store] ${label}`, 'color:#c8ff3d;font-weight:bold', ...args);
+const logErr = (label, ...args) => console.error(`%c[CalCal:store] ${label}`, 'color:#ff6b9d;font-weight:bold', ...args);
+
 /**
  * Estado de alimentos, agua, peso, ingredientes, comidas compuestas.
  * Patrón: Zustand persist sigue activo (offline cache + fast paint), pero cada
@@ -146,6 +153,7 @@ export const useFoodStore = create(
 
       // ============ CUSTOM INGREDIENTS ============
       addIngredient: (ing) => {
+        log('addIngredient → recibido', ing);
         const clean = {
           id: uuid(),
           name: (ing.name || '').trim(),
@@ -160,9 +168,26 @@ export const useFoodStore = create(
           photo: ing.photo || null,
           createdAt: Date.now()
         };
-        if (!clean.name) return null;
+        if (!clean.name) {
+          logErr('addIngredient → ABORTADO: nombre vacío');
+          return null;
+        }
+        const before = get().customIngredients.length;
         set((s) => ({ customIngredients: [clean, ...s.customIngredients] }));
-        db.upsertIngredient(clean);
+        const after = get().customIngredients.length;
+        log(`addIngredient → local: ${before} → ${after}`, { id: clean.id, name: clean.name });
+
+        // write-through con verificación
+        db.upsertIngredient(clean).then((res) => {
+          if (res?.ok) {
+            log(`addIngredient → Supabase OK: ${clean.name}`);
+          } else {
+            logErr(`addIngredient → Supabase FALLÓ (${res?.reason}). El ingrediente está SOLO en local y se perderá al recargar.`, res);
+          }
+        }).catch((err) => {
+          logErr('addIngredient → upsert promise rechazada', err);
+        });
+
         return clean;
       },
       updateIngredient: (id, patch) => {
@@ -177,6 +202,8 @@ export const useFoodStore = create(
         if (updated) db.upsertIngredient(updated);
       },
       removeIngredient: (id) => {
+        const target = get().customIngredients.find((i) => i.id === id);
+        log('removeIngredient →', { id, name: target?.name });
         // Identifica comidas afectadas para re-upsertarlas (perdieron un ingrediente)
         const affectedMeals = get().customMeals
           .filter((m) => m.items.some((it) => it.ingredientId === id))
@@ -184,6 +211,7 @@ export const useFoodStore = create(
             ...m,
             items: m.items.filter((it) => it.ingredientId !== id)
           }));
+        const before = get().customIngredients.length;
         set((s) => ({
           customIngredients: s.customIngredients.filter((i) => i.id !== id),
           customMeals: s.customMeals
@@ -192,8 +220,8 @@ export const useFoodStore = create(
               : m)
             .filter((m) => m.items.length > 0)
         }));
+        log(`removeIngredient → local: ${before} → ${get().customIngredients.length}`);
         db.removeIngredient(id);
-        // Sync de las comidas afectadas (las que se quedaron vacías hay que borrarlas)
         affectedMeals.forEach((m) => {
           if (m.items.length === 0) db.removeMeal(m.id);
           else db.upsertMeal({ ...m, totals: computeMealTotals(m.items) });
@@ -255,24 +283,63 @@ export const useFoodStore = create(
        * aunque ese algo sea un array/objeto vacío legítimo.
        */
       hydrate: ({ entries, weights, water, ingredients, meals }) => {
-        set((s) => ({
-          entries:           entries     ?? s.entries,
-          weights:           weights     ?? s.weights,
-          water:             water       ?? s.water,
-          customIngredients: ingredients ?? s.customIngredients,
-          customMeals:       meals       ?? s.customMeals
+        const cur = get();
+        console.group('%c[CalCal:store] hydrate ← Supabase', 'color:#c8ff3d;font-weight:bold');
+        console.log('Recibido del servidor:', {
+          entries:     entries === null ? 'NULL (fetch falló)' : `${Object.keys(entries || {}).length} días`,
+          weights:     weights === null ? 'NULL (fetch falló)' : `${weights?.length ?? 0} pesajes`,
+          water:       water === null ? 'NULL (fetch falló)' : `${Object.keys(water || {}).length} días`,
+          ingredients: ingredients === null ? 'NULL (fetch falló)' : `${ingredients?.length ?? 0} items`,
+          meals:       meals === null ? 'NULL (fetch falló)' : `${meals?.length ?? 0} items`
+        });
+        console.log('Estado local actual:', {
+          entries:           `${Object.keys(cur.entries).length} días`,
+          weights:           `${cur.weights.length} pesajes`,
+          water:             `${Object.keys(cur.water).length} días`,
+          customIngredients: `${cur.customIngredients.length} items`,
+          customMeals:       `${cur.customMeals.length} items`
+        });
+
+        // Decisión por slice
+        if (ingredients === null) {
+          log('hydrate.customIngredients → mantengo local (server falló)');
+        } else if (ingredients.length === 0 && cur.customIngredients.length > 0) {
+          logErr(`hydrate.customIngredients → ATENCIÓN: server devolvió [] pero local tiene ${cur.customIngredients.length}. REEMPLAZANDO con [].`);
+          logErr('  Causa probable: upserts anteriores fallaron silenciosamente.');
+          logErr('  Local que se va a perder:', cur.customIngredients.map((i) => i.name));
+        } else {
+          log(`hydrate.customIngredients → ${cur.customIngredients.length} → ${ingredients.length}`);
+        }
+
+        set({
+          entries:           entries     ?? cur.entries,
+          weights:           weights     ?? cur.weights,
+          water:             water       ?? cur.water,
+          customIngredients: ingredients ?? cur.customIngredients,
+          customMeals:       meals       ?? cur.customMeals
           // favorites / streakData / planner / recipes / shoppingList: locales, no se tocan
-        }));
+        });
+
+        log('Estado tras hydrate:', {
+          customIngredients: get().customIngredients.length,
+          customMeals:       get().customMeals.length
+        });
+        console.groupEnd();
       },
 
       /** Limpia todo (logout). */
-      reset: () => set({
-        entries: {}, water: {}, weights: [],
-        favorites: [],
-        streakData: { lastLoggedDate: null, current: 0, best: 0 },
-        planner: {}, recipes: [], shoppingList: [],
-        customIngredients: [], customMeals: []
-      })
+      reset: () => {
+        const cur = get();
+        logErr(`reset() llamado. Borrando: ${cur.customIngredients.length} ingredientes, ${cur.customMeals.length} comidas, ${cur.weights.length} pesajes, ${Object.keys(cur.entries).length} días de comida`);
+        console.trace('reset() stack trace ↑'); // saber quién lo invocó
+        set({
+          entries: {}, water: {}, weights: [],
+          favorites: [],
+          streakData: { lastLoggedDate: null, current: 0, best: 0 },
+          planner: {}, recipes: [], shoppingList: [],
+          customIngredients: [], customMeals: []
+        });
+      }
     }),
     {
       name: 'calcal:food',
@@ -280,6 +347,41 @@ export const useFoodStore = create(
     }
   )
 );
+
+// ─────────────────────────────────────────────────────────────
+//  CENTINELA: cualquier cambio en customIngredients se loguea.
+//  Si pasa de N>0 a 0, imprime un stack trace para identificar
+//  quién está borrando los ingredientes.
+// ─────────────────────────────────────────────────────────────
+{
+  let prev = useFoodStore.getState().customIngredients;
+  log(`centinela inicial: customIngredients = ${prev.length} items`, prev.map((i) => i.name));
+  useFoodStore.subscribe((state) => {
+    const next = state.customIngredients;
+    if (next === prev) return;
+    if (next.length !== prev.length) {
+      if (next.length === 0 && prev.length > 0) {
+        logErr(`⚠️ customIngredients VACIADO: ${prev.length} → 0`);
+        console.trace('Quién vació customIngredients ↑');
+      } else {
+        log(`customIngredients: ${prev.length} → ${next.length}`);
+      }
+    } else {
+      log(`customIngredients: contenido actualizado (mismo count: ${next.length})`);
+    }
+    prev = next;
+  });
+}
+
+// Expone el store en window para inspección manual desde la consola:
+//   __store.customIngredients
+//   __store // estado completo
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, '__store', {
+    get: () => useFoodStore.getState(),
+    configurable: true
+  });
+}
 
 function guessMeal() {
   const h = new Date().getHours();

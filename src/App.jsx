@@ -55,18 +55,19 @@ export default function App() {
   const hydratedUserId = useRef(null);
 
   useEffect(() => {
-    const unsub = initAuthListener(async (session) => {
+    const unsub = initAuthListener(async (session, event) => {
       const auth = useAuthStore.getState();
       const userId = session?.user?.id || null;
+      console.log(`%c[CalCal:auth] evento=${event} userId=${userId} hydratedYa=${hydratedUserId.current}`, 'color:#8c70ff;font-weight:bold');
 
       if (userId) {
         if (hydratedUserId.current === userId) {
-          // Mismo usuario, ya hidratado. No tocamos los stores (evita carrera con
-          // mutaciones recientes que aún no han terminado de subir a Supabase).
+          console.log(`%c[CalCal:auth] mismo usuario ya hidratado → SKIP hydrate (evita pisar mutaciones en vuelo)`, 'color:#888');
           auth.setHydrated(true);
           return;
         }
         try {
+          console.log(`%c[CalCal:auth] iniciando hydrateAll() para ${userId}`, 'color:#7c5cff');
           const data = await hydrateAll();
           if (data) {
             if (data.profile) useUserStore.getState().replaceProfile(data.profile);
@@ -77,16 +78,17 @@ export default function App() {
               ingredients: data.ingredients,
               meals:       data.meals
             });
+          } else {
+            console.warn('[CalCal:auth] hydrateAll() devolvió null (Supabase no configurado)');
           }
           hydratedUserId.current = userId;
         } catch (e) {
-          // eslint-disable-next-line no-console
-          console.error('Hydrate error', e);
+          console.error('[CalCal:auth] Hydrate error', e);
         } finally {
           auth.setHydrated(true);
         }
       } else {
-        // Sin sesión: limpia stores locales para no filtrar datos de otra cuenta.
+        console.log(`%c[CalCal:auth] sin sesión → reseteando stores`, 'color:#ff6b9d');
         hydratedUserId.current = null;
         useFoodStore.getState().reset();
         useUserStore.getState().resetProfile();
