@@ -79,7 +79,7 @@ async function callGemini({
 
   if (!res.ok) {
     const txt = await res.text();
-    throw new Error(`Gemini error ${res.status}: ${txt.slice(0, 300)}`);
+    throw new Error(humanizeGeminiError(res.status, txt));
   }
   const data = await res.json();
   return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
@@ -316,4 +316,79 @@ function toNum(v) {
   if (v == null || v === '') return undefined;
   const n = Number(String(v).replace(',', '.'));
   return isNaN(n) ? undefined : n;
+}
+
+/**
+ * Lista los modelos disponibles para la API key actual.
+ * Útil para debugging cuando aparece un 404 "model not found".
+ * Imprime en consola y devuelve el array crudo.
+ *
+ * @param {{ apiVersion?: 'v1' | 'v1beta' }} opts
+ * @returns {Promise<Array<{name:string, supportedGenerationMethods:string[]}>>}
+ */
+export async function listGeminiModels(opts = {}) {
+  const apiVersion = opts.apiVersion || 'v1';
+  const key = getApiKey();
+  if (!key) {
+    console.warn('[Gemini] Sin API key. Configúrala en Ajustes → Coach IA antes de listar modelos.');
+    return [];
+  }
+  const url = `https://generativelanguage.googleapis.com/${apiVersion}/models?key=${encodeURIComponent(key)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      const txt = await res.text();
+      console.error(`[Gemini ${apiVersion}] Error listando modelos:`, humanizeGeminiError(res.status, txt));
+      return [];
+    }
+    const data = await res.json();
+    const models = data?.models || [];
+    console.group(`%c[Gemini ${apiVersion}] ${models.length} modelos disponibles con tu key`, 'color:#c8ff3d; font-weight:bold');
+    models.forEach((m) => {
+      const name = (m.name || '').replace(/^models\//, '');
+      const methods = (m.supportedGenerationMethods || []).join(', ');
+      const tokens = m.inputTokenLimit ? ` · in ${m.inputTokenLimit} / out ${m.outputTokenLimit}` : '';
+      console.log(
+        `%c${name}%c\n  display: ${m.displayName || '—'}\n  methods: ${methods}${tokens}`,
+        'color:#7c5cff; font-weight:600',
+        'color:#888'
+      );
+    });
+    console.groupEnd();
+    // Para el debugging cómodo: lo dejo también en window
+    if (typeof window !== 'undefined') window.__geminiModels = models;
+    return models;
+  } catch (err) {
+    console.error(`[Gemini ${apiVersion}] Fallo de red al listar modelos:`, err.message);
+    return [];
+  }
+}
+
+/**
+ * Convierte errores crudos de Gemini en mensajes legibles para el usuario.
+ */
+function humanizeGeminiError(status, rawText) {
+  let inner = '';
+  try {
+    const json = JSON.parse(rawText);
+    inner = json?.error?.message || '';
+  } catch { /* not JSON */ }
+
+  if (status === 429) {
+    return 'Cuota de Gemini agotada. Espera unos minutos o sube de plan en aistudio.google.com/rate-limit.';
+  }
+  if (status === 403) {
+    return 'API key de Gemini inválida o sin permisos. Revísala en Ajustes → Coach IA.';
+  }
+  if (status === 400 && /api key/i.test(inner)) {
+    return 'API key no válida. Revísala en Ajustes → Coach IA.';
+  }
+  if (status === 404) {
+    return 'Modelo de Gemini no encontrado. Puede haber sido deprecado: actualiza la app o avisa al admin.';
+  }
+  if (status >= 500) {
+    return 'Gemini no responde ahora mismo. Inténtalo en unos segundos.';
+  }
+  const short = (inner || rawText || '').slice(0, 220);
+  return `Gemini error ${status}: ${short}`;
 }
