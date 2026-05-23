@@ -246,16 +246,23 @@ export const useFoodStore = create(
 
       // ============ HYDRATION / RESET ============
 
-      /** Reemplaza el state con datos del servidor (al iniciar sesión). */
+      /**
+       * Reemplaza el state con datos del servidor (al iniciar sesión).
+       *
+       * Importante: usamos `??` en vez de `||`. Si una sección viene `null` significa
+       * que el fetch falló (red, cuota, RLS) — en ese caso mantenemos el cache local
+       * para no perder datos. Sólo reemplazamos cuando el server devolvió algo,
+       * aunque ese algo sea un array/objeto vacío legítimo.
+       */
       hydrate: ({ entries, weights, water, ingredients, meals }) => {
-        set({
-          entries: entries || {},
-          weights: weights || [],
-          water: water || {},
-          customIngredients: ingredients || [],
-          customMeals: meals || []
+        set((s) => ({
+          entries:           entries     ?? s.entries,
+          weights:           weights     ?? s.weights,
+          water:             water       ?? s.water,
+          customIngredients: ingredients ?? s.customIngredients,
+          customMeals:       meals       ?? s.customMeals
           // favorites / streakData / planner / recipes / shoppingList: locales, no se tocan
-        });
+        }));
       },
 
       /** Limpia todo (logout). */

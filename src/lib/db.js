@@ -78,8 +78,8 @@ export async function fetchProfile() {
     .select('*')
     .eq('user_id', userId)
     .maybeSingle();
-  if (error) { warn('fetchProfile', error); return null; }
-  return rowToProfile(data);
+  if (error) { warn('fetchProfile', error); return null; } // null = error → hydrate ignora
+  return rowToProfile(data); // null si no hay perfil aún (primera vez), pero hydrate también lo respeta
 }
 
 export async function upsertProfile(profile) {
@@ -139,15 +139,15 @@ function entryToRow(userId, e, date) {
 }
 
 export async function fetchEntries() {
-  if (!isSupabaseConfigured) return {};
+  if (!isSupabaseConfigured) return null;
   const userId = await currentUserId();
-  if (!userId) return {};
+  if (!userId) return null;
   const { data, error } = await supabase
     .from('food_entries')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: true });
-  if (error) { warn('fetchEntries', error); return {}; }
+  if (error) { warn('fetchEntries', error); return null; }
   // Reagrupa por fecha
   const out = {};
   (data || []).forEach((r) => {
@@ -188,15 +188,15 @@ export async function removeEntry(entryId) {
 // ============================================================
 
 export async function fetchWeights() {
-  if (!isSupabaseConfigured) return [];
+  if (!isSupabaseConfigured) return null;
   const userId = await currentUserId();
-  if (!userId) return [];
+  if (!userId) return null;
   const { data, error } = await supabase
     .from('weights')
     .select('*')
     .eq('user_id', userId)
     .order('date', { ascending: true });
-  if (error) { warn('fetchWeights', error); return []; }
+  if (error) { warn('fetchWeights', error); return null; }
   return (data || []).map((r) => ({ date: r.date, kg: Number(r.kg) }));
 }
 
@@ -227,14 +227,14 @@ export async function removeWeight(date) {
 // ============================================================
 
 export async function fetchWater() {
-  if (!isSupabaseConfigured) return {};
+  if (!isSupabaseConfigured) return null;
   const userId = await currentUserId();
-  if (!userId) return {};
+  if (!userId) return null;
   const { data, error } = await supabase
     .from('water_logs')
     .select('*')
     .eq('user_id', userId);
-  if (error) { warn('fetchWater', error); return {}; }
+  if (error) { warn('fetchWater', error); return null; }
   const out = {};
   (data || []).forEach((r) => { out[r.date] = r.ml; });
   return out;
@@ -289,15 +289,15 @@ function ingredientToRow(userId, i) {
 }
 
 export async function fetchIngredients() {
-  if (!isSupabaseConfigured) return [];
+  if (!isSupabaseConfigured) return null;
   const userId = await currentUserId();
-  if (!userId) return [];
+  if (!userId) return null;
   const { data, error } = await supabase
     .from('custom_ingredients')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
-  if (error) { warn('fetchIngredients', error); return []; }
+  if (error) { warn('fetchIngredients', error); return null; }
   return (data || []).map(rowToIngredient);
 }
 
@@ -346,15 +346,15 @@ function mealToRow(userId, m) {
 }
 
 export async function fetchMeals() {
-  if (!isSupabaseConfigured) return [];
+  if (!isSupabaseConfigured) return null;
   const userId = await currentUserId();
-  if (!userId) return [];
+  if (!userId) return null;
   const { data, error } = await supabase
     .from('custom_meals')
     .select('*')
     .eq('user_id', userId)
     .order('created_at', { ascending: false });
-  if (error) { warn('fetchMeals', error); return []; }
+  if (error) { warn('fetchMeals', error); return null; }
   return (data || []).map(rowToMeal);
 }
 

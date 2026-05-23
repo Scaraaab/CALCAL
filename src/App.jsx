@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import Layout from './components/layout/Layout';
@@ -49,11 +49,23 @@ function RequireOnboarded({ children }) {
 
 export default function App() {
   // Listener global de Supabase: en cada cambio de sesión, hidratamos o limpiamos
+  // Track del último usuario hidratado. Evita re-hidratar en cada TOKEN_REFRESHED
+  // (que dispara cada ~hora y podría pisar datos creados entre medias) y en cada
+  // INITIAL_SESSION duplicado del listener.
+  const hydratedUserId = useRef(null);
+
   useEffect(() => {
-    const unsub = initAuthListener(async (session, event) => {
+    const unsub = initAuthListener(async (session) => {
       const auth = useAuthStore.getState();
-      if (session) {
-        // SIGN-IN: traer datos del servidor y reemplazar stores
+      const userId = session?.user?.id || null;
+
+      if (userId) {
+        if (hydratedUserId.current === userId) {
+          // Mismo usuario, ya hidratado. No tocamos los stores (evita carrera con
+          // mutaciones recientes que aún no han terminado de subir a Supabase).
+          auth.setHydrated(true);
+          return;
+        }
         try {
           const data = await hydrateAll();
           if (data) {
@@ -66,14 +78,16 @@ export default function App() {
               meals:       data.meals
             });
           }
+          hydratedUserId.current = userId;
         } catch (e) {
           // eslint-disable-next-line no-console
           console.error('Hydrate error', e);
         } finally {
           auth.setHydrated(true);
         }
-      } else if (event === 'SIGNED_OUT' || event === 'INITIAL_SESSION') {
-        // Sin sesión: limpiar stores locales para no filtrar datos de otra cuenta
+      } else {
+        // Sin sesión: limpia stores locales para no filtrar datos de otra cuenta.
+        hydratedUserId.current = null;
         useFoodStore.getState().reset();
         useUserStore.getState().resetProfile();
         auth.setHydrated(true);

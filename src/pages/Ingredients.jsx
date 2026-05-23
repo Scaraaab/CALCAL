@@ -10,7 +10,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { useFoodStore } from '../store/useFoodStore';
 import { compressImage } from '../lib/image';
 import { analyzeNutritionLabel, hasApiKey } from '../lib/claude';
-import { fmtNum } from '../utils/format';
+import { fmtNum, sanitizeDecimal, parseDecimal } from '../utils/format';
 
 const MEASURE_OPTIONS = [
   { value: 'per100g', label: 'Por 100 g' },
@@ -47,17 +47,20 @@ export default function Ingredients() {
   }
 
   function openEdit(ing) {
+    // Convertimos a string para edición. Los ceros se muestran vacíos para que el
+    // usuario pueda empezar a escribir directamente sin tener que borrar el '0'.
+    const toStr = (n) => (n && n !== 0) ? String(n) : '';
     setEditingId(ing.id);
     setForm({
       name: ing.name,
       measureType: ing.measureType,
       servingLabel: ing.servingLabel || '',
       photo: ing.photo || null,
-      kcal: String(ing.kcal),
-      protein: String(ing.protein),
-      carbs: String(ing.carbs),
-      fat: String(ing.fat),
-      fiber: String(ing.fiber || 0)
+      kcal:    toStr(ing.kcal),
+      protein: toStr(ing.protein),
+      carbs:   toStr(ing.carbs),
+      fat:     toStr(ing.fat),
+      fiber:   toStr(ing.fiber)
     });
     setOpen(true);
   }
@@ -69,11 +72,12 @@ export default function Ingredients() {
       measureType: form.measureType,
       servingLabel: form.servingLabel.trim(),
       photo: form.photo,
-      kcal: parseFloat(form.kcal) || 0,
-      protein: parseFloat(form.protein) || 0,
-      carbs: parseFloat(form.carbs) || 0,
-      fat: parseFloat(form.fat) || 0,
-      fiber: parseFloat(form.fiber) || 0
+      // parseDecimal acepta '12.5', '12,5' o '' (→ 0). Solo aquí cruzamos string → number.
+      kcal:    parseDecimal(form.kcal),
+      protein: parseDecimal(form.protein),
+      carbs:   parseDecimal(form.carbs),
+      fat:     parseDecimal(form.fat),
+      fiber:   parseDecimal(form.fiber)
     };
     if (editingId) updateIngredient(editingId, payload);
     else addIngredient(payload);
@@ -350,14 +354,36 @@ function IngredientForm({ form, setForm }) {
         )}
       </div>
 
-      {/* Campos numéricos */}
+      {/* Campos numéricos. Usamos type="text" + inputMode="decimal":
+          - El navegador no interfiere con el valor (no se atrapa en 0/0.1)
+          - El móvil muestra teclado numérico con decimal
+          - Se permite borrado total (string vacío) durante la edición
+          - sanitizeDecimal filtra a dígitos + un único separador (. o ,)
+          - parseDecimal convierte a número solo al guardar */}
       <div className="grid grid-cols-2 gap-3">
-        <Input label="Calorías (kcal)" type="number" inputMode="decimal" step="1" value={form.kcal} onChange={(e) => setForm({ ...form, kcal: e.target.value })} />
-        <Input label="Proteína (g)" type="number" inputMode="decimal" step="0.1" value={form.protein} onChange={(e) => setForm({ ...form, protein: e.target.value })} />
-        <Input label="Carbos (g)" type="number" inputMode="decimal" step="0.1" value={form.carbs} onChange={(e) => setForm({ ...form, carbs: e.target.value })} />
-        <Input label="Grasas (g)" type="number" inputMode="decimal" step="0.1" value={form.fat} onChange={(e) => setForm({ ...form, fat: e.target.value })} />
+        <DecimalField label="Calorías (kcal)" value={form.kcal}    onChange={(v) => setForm((f) => ({ ...f, kcal: v }))}    placeholder="0" />
+        <DecimalField label="Proteína (g)"    value={form.protein} onChange={(v) => setForm((f) => ({ ...f, protein: v }))} placeholder="0" />
+        <DecimalField label="Carbos (g)"      value={form.carbs}   onChange={(v) => setForm((f) => ({ ...f, carbs: v }))}   placeholder="0" />
+        <DecimalField label="Grasas (g)"      value={form.fat}     onChange={(v) => setForm((f) => ({ ...f, fat: v }))}     placeholder="0" />
       </div>
-      <Input label="Fibra (g) — opcional" type="number" inputMode="decimal" step="0.1" value={form.fiber} onChange={(e) => setForm({ ...form, fiber: e.target.value })} />
+      <DecimalField label="Fibra (g) — opcional" value={form.fiber} onChange={(v) => setForm((f) => ({ ...f, fiber: v }))} placeholder="0" />
     </div>
+  );
+}
+
+/**
+ * Campo de input decimal. El valor SIEMPRE es string mientras se edita; el padre
+ * decide cuándo llamar a parseDecimal() para obtener el número final.
+ */
+function DecimalField({ value, onChange, ...rest }) {
+  return (
+    <Input
+      {...rest}
+      type="text"
+      inputMode="decimal"
+      autoComplete="off"
+      value={value}
+      onChange={(e) => onChange(sanitizeDecimal(e.target.value))}
+    />
   );
 }
