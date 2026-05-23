@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, Settings } from 'lucide-react';
+import { ChevronLeft, Settings, User } from 'lucide-react';
 
 export default function Header({ title, subtitle, back, action, right }) {
   const nav = useNavigate();
@@ -26,6 +26,15 @@ export default function Header({ title, subtitle, back, action, right }) {
           aria-label="Ajustes"
         >
           <Settings size={18} />
+        </button>
+      )}
+      {action === 'profile' && (
+        <button
+          onClick={() => nav('/profile')}
+          className="w-10 h-10 rounded-full bg-gradient-to-br from-brand-500 to-lime flex items-center justify-center text-white"
+          aria-label="Perfil"
+        >
+          <User size={18} />
         </button>
       )}
     </header>

@@ -1,23 +1,34 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Coffee, Soup, Cookie, Utensils } from 'lucide-react';
+import { Check, Sparkles, Search, Heart, Camera, UtensilsCrossed, Type } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Segmented from '../components/ui/Segmented';
 import NaturalInput from '../components/food/NaturalInput';
 import FoodSearch from '../components/food/FoodSearch';
 import QuickFoods from '../components/food/QuickFoods';
+import PhotoLog from '../components/food/PhotoLog';
+import SavedMealsRow from '../components/food/SavedMealsRow';
 import { useFoodStore } from '../store/useFoodStore';
 import { fmtNum } from '../utils/format';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MEALS = ['Desayuno', 'Almuerzo', 'Merienda', 'Cena'];
 
+const MODES = [
+  { value: 'texto',   label: 'Texto IA', icon: Sparkles },
+  { value: 'foto',    label: 'Foto',     icon: Camera },
+  { value: 'mias',    label: 'Mis comidas', icon: UtensilsCrossed },
+  { value: 'buscar',  label: 'Buscar',   icon: Search },
+  { value: 'rapidos', label: 'Rápidos',  icon: Heart }
+];
+
 export default function LogFood() {
   const nav = useNavigate();
   const addEntries = useFoodStore((s) => s.addEntries);
+  const bumpMealUseCount = useFoodStore((s) => s.bumpMealUseCount);
   const [meal, setMeal] = useState(guessMeal());
-  const [pending, setPending] = useState([]); // items aún no confirmados
-  const [mode, setMode] = useState('texto'); // texto | buscar | rapidos
+  const [pending, setPending] = useState([]);
+  const [mode, setMode] = useState('texto');
 
   function handleParsed(items) {
     setPending((p) => [...p, ...items]);
@@ -33,6 +44,28 @@ export default function LogFood() {
     setPending((p) => p.filter((_, i) => i !== idx));
   }
 
+  /**
+   * One-tap: registra la comida compuesta directamente al día (sin pending list).
+   */
+  function pickSavedMeal(savedMeal) {
+    addEntries([{
+      name: savedMeal.name,
+      qty: 1,
+      unit: 'comida',
+      kcal: savedMeal.totals.kcal,
+      protein: savedMeal.totals.protein,
+      carbs: savedMeal.totals.carbs,
+      fat: savedMeal.totals.fat,
+      fiber: savedMeal.totals.fiber,
+      photo: savedMeal.photo || undefined,
+      source: 'meal',
+      mealId: savedMeal.id,
+      meal
+    }]);
+    bumpMealUseCount(savedMeal.id);
+    nav('/');
+  }
+
   const totalKcal = pending.reduce((s, x) => s + (x.kcal || 0), 0);
 
   return (
@@ -40,6 +73,7 @@ export default function LogFood() {
       <Header title="Registrar" subtitle="Comida" back />
 
       <div className="px-5 space-y-4">
+        {/* Selección de tipo de comida */}
         <Segmented
           value={meal}
           onChange={setMeal}
@@ -47,19 +81,39 @@ export default function LogFood() {
           className="w-full overflow-x-auto"
         />
 
-        <Segmented
-          value={mode}
-          onChange={setMode}
-          options={[
-            { value: 'texto', label: 'Texto IA' },
-            { value: 'buscar', label: 'Buscar' },
-            { value: 'rapidos', label: 'Rápidos' }
-          ]}
-          className="w-full"
-        />
+        {/* Fila de comidas guardadas (always-on, one-tap) */}
+        <div>
+          <div className="flex items-center justify-between mb-2 px-1">
+            <p className="label">Mis comidas · one-tap</p>
+          </div>
+          <SavedMealsRow onPick={pickSavedMeal} layout="row" />
+        </div>
 
-        {mode === 'texto' && <NaturalInput onParsed={handleParsed} />}
-        {mode === 'buscar' && <FoodSearch onAdd={(it) => handleParsed([it])} />}
+        {/* Selector de modo en pills horizontales */}
+        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
+          {MODES.map((m) => {
+            const Icon = m.icon;
+            const active = m.value === mode;
+            return (
+              <button
+                key={m.value}
+                onClick={() => setMode(m.value)}
+                className={`flex-none inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border transition ${
+                  active
+                    ? 'bg-white text-ink-950 border-white'
+                    : 'bg-white/3 text-white/65 border-white/8 hover:text-white'
+                }`}
+              >
+                <Icon size={14} /> {m.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {mode === 'texto'   && <NaturalInput onParsed={handleParsed} />}
+        {mode === 'foto'    && <PhotoLog onParsed={handleParsed} />}
+        {mode === 'mias'    && <SavedMealsRow onPick={pickSavedMeal} layout="grid" />}
+        {mode === 'buscar'  && <FoodSearch onAdd={(it) => handleParsed([it])} />}
         {mode === 'rapidos' && <QuickFoods onPick={(it) => handleParsed([it])} />}
 
         <AnimatePresence>
@@ -72,6 +126,7 @@ export default function LogFood() {
               <ul className="space-y-1.5">
                 {pending.map((it, i) => (
                   <li key={i} className="flex items-center gap-3 bg-white/3 rounded-xl px-3 py-2">
+                    {it.photo && <img src={it.photo} alt="" className="w-9 h-9 rounded-lg object-cover flex-none" />}
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate capitalize">{it.name}</p>
                       <p className="text-[11px] text-white/45 truncate">

@@ -36,7 +36,7 @@ export default function Dashboard() {
       <Header
         title={`${greeting}${profile.name ? `, ${profile.name.split(' ')[0]}` : ''}`}
         subtitle={formatHuman(today)}
-        action="settings"
+        action="profile"
       />
 
       <div className="px-5 space-y-5">

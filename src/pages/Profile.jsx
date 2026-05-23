@@ -1,5 +1,5 @@
 import { Link, useNavigate } from 'react-router-dom';
-import { User, LogOut, Calendar, Sparkles, ChevronRight, Target, ChefHat, BookOpen } from 'lucide-react';
+import { User, LogOut, Calendar, Sparkles, ChevronRight, Target, ChefHat, BookOpen, Carrot, UtensilsCrossed } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import { useAuthStore } from '../store/useAuthStore';
@@ -43,12 +43,14 @@ export default function Profile() {
         </div>
 
         <Card className="overflow-hidden">
-          <Row to="/onboarding" icon={Target} label="Reconfigurar objetivos" />
-          <Row to="/planner"     icon={Calendar} label="Meal planner" />
-          <Row to="/recipes"     icon={ChefHat}  label="Mis recetas" />
-          <Row to="/history"     icon={BookOpen} label="Historial completo" />
-          <Row to="/coach"       icon={Sparkles} label="Coach IA" />
-          <Row to="/settings"    icon={User}     label="Ajustes y datos" />
+          <Row to="/ingredients" icon={Carrot}          label="Mis ingredientes" />
+          <Row to="/meals"       icon={UtensilsCrossed} label="Mis comidas guardadas" />
+          <Row to="/onboarding"  icon={Target}          label="Reconfigurar objetivos" />
+          <Row to="/planner"     icon={Calendar}        label="Meal planner" />
+          <Row to="/recipes"     icon={ChefHat}         label="Mis recetas" />
+          <Row to="/history"     icon={BookOpen}        label="Historial completo" />
+          <Row to="/coach"       icon={Sparkles}        label="Coach IA" />
+          <Row to="/settings"    icon={User}            label="Ajustes y datos" />
         </Card>
 
         <button

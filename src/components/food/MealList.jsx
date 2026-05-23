@@ -54,6 +54,9 @@ export default function MealList({ entries = [], date, readOnly = false }) {
                     transition={{ duration: 0.2 }}
                     className="px-4 py-3 flex items-center gap-3"
                   >
+                    {e.photo && (
+                      <img src={e.photo} alt="" className="w-10 h-10 rounded-xl object-cover flex-none" />
+                    )}
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate capitalize">{e.name}</p>
                       <p className="text-xs text-white/45 truncate">

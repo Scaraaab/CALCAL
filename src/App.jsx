@@ -13,6 +13,9 @@ import Recipes from './pages/Recipes';
 import Coach from './pages/Coach';
 import Profile from './pages/Profile';
 import Settings from './pages/Settings';
+import Ingredients from './pages/Ingredients';
+import Meals from './pages/Meals';
+import MealBuilder from './pages/MealBuilder';
 import { useUserStore } from './store/useUserStore';
 import { useAuthStore } from './store/useAuthStore';
 
@@ -60,6 +63,10 @@ export default function App() {
           <Route path="/coach" element={<Coach />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/ingredients" element={<Ingredients />} />
+          <Route path="/meals" element={<Meals />} />
+          <Route path="/meals/new" element={<MealBuilder />} />
+          <Route path="/meals/edit/:id" element={<MealBuilder />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
