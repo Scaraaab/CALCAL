@@ -135,13 +135,19 @@ export function autoAdjustCalories(profile, weightHistory) {
  * Calcula totales nutricionales de un array de entries.
  */
 export function totalsFromEntries(entries = []) {
+  // OJO: las entries guardan el campo como `kcal` (consistente con FOOD_DB y el
+  // resto del código). La clave de SALIDA sigue siendo `calories` porque es lo
+  // que todos los callers (Dashboard, History, Progress, Coach) esperan para
+  // comparar contra `targets.calories`.
+  // Aceptamos también `e.calories` por compatibilidad con entries antiguas que
+  // pudieran existir en localStorage.
   return entries.reduce(
     (acc, e) => ({
-      calories: acc.calories + (e.calories || 0),
-      protein:  acc.protein  + (e.protein  || 0),
-      carbs:    acc.carbs    + (e.carbs    || 0),
-      fat:      acc.fat      + (e.fat      || 0),
-      fiber:    acc.fiber    + (e.fiber    || 0)
+      calories: acc.calories + (Number(e.kcal) || Number(e.calories) || 0),
+      protein:  acc.protein  + (Number(e.protein) || 0),
+      carbs:    acc.carbs    + (Number(e.carbs)   || 0),
+      fat:      acc.fat      + (Number(e.fat)     || 0),
+      fiber:    acc.fiber    + (Number(e.fiber)   || 0)
     }),
     { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
   );
