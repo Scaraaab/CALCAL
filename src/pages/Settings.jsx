@@ -84,7 +84,7 @@ export default function Settings() {
                 {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             }
-            hint="Plan gratuito de Google AI Studio. Modelo: gemini-1.5-flash. Una sola key cubre chat y visión."
+            hint="Plan gratuito de Google AI Studio. Modelo: gemini-2.0-flash. Una sola key cubre chat y visión."
           />
           <div className="flex items-center gap-2 mt-3">
             <Button onClick={saveKey} disabled={apiKey === getApiKey()}>
