@@ -14,17 +14,21 @@ export default function BottomNav() {
   return (
     <nav className="fixed bottom-0 inset-x-0 z-30 px-3 pb-[max(0.5rem,var(--safe-bottom))] pt-1">
       <div className="relative max-w-md mx-auto">
-        <motion.button
-          whileTap={{ scale: 0.92 }}
-          onClick={() => nav('/log')}
-          className="absolute -top-7 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-lime text-ink-950 shadow-limeGlow flex items-center justify-center"
-          aria-label="Registrar comida"
-        >
-          <Plus size={26} strokeWidth={2.5} />
-        </motion.button>
+        {/* Wrapper de posicionamiento (Tailwind) — el motion va dentro para no chocar con transforms */}
+        <div className="absolute left-1/2 -translate-x-1/2 -top-7 z-10">
+          <motion.button
+            whileTap={{ scale: 0.92 }}
+            onClick={() => nav('/log')}
+            className="w-14 h-14 rounded-full bg-lime text-ink-950 shadow-limeGlow flex items-center justify-center"
+            aria-label="Registrar comida"
+          >
+            <Plus size={26} strokeWidth={2.5} />
+          </motion.button>
+        </div>
+
         <div className="grid grid-cols-5 items-center gap-1 glass rounded-3xl px-2 py-2">
           {items.slice(0, 2).map((it) => <Item key={it.to} {...it} />)}
-          <div />
+          <div aria-hidden="true" />
           {items.slice(2).map((it) => <Item key={it.to} {...it} />)}
         </div>
       </div>

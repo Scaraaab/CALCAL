@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Trash2, Download, ShoppingCart, Target, Droplet, Save, Eye, EyeOff, Camera } from 'lucide-react';
+import { Sparkles, Trash2, Download, ShoppingCart, Target, Droplet, Save, Eye, EyeOff } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -9,7 +9,6 @@ import { useUserStore } from '../store/useUserStore';
 import { useFoodStore } from '../store/useFoodStore';
 import { useAuthStore } from '../store/useAuthStore';
 import { getApiKey, setApiKey, hasApiKey } from '../lib/claude';
-import { getGeminiKey, setGeminiKey, hasGeminiKey } from '../lib/gemini';
 import { storage } from '../lib/storage';
 import { GOALS, ACTIVITY } from '../lib/nutrition';
 
@@ -24,24 +23,15 @@ export default function Settings() {
   const clearShopping = useFoodStore((s) => s.clearShopping);
 
   const [apiKey, setKey] = useState(getApiKey());
-  const [geminiKey, setGKey] = useState(getGeminiKey());
   const [showKey, setShowKey] = useState(false);
-  const [showGKey, setShowGKey] = useState(false);
   const [newItem, setNewItem] = useState('');
   const [saved, setSaved] = useState(false);
-  const [gSaved, setGSaved] = useState(false);
 
   useEffect(() => { if (saved) { const t = setTimeout(() => setSaved(false), 1500); return () => clearTimeout(t); } }, [saved]);
-  useEffect(() => { if (gSaved) { const t = setTimeout(() => setGSaved(false), 1500); return () => clearTimeout(t); } }, [gSaved]);
 
   function saveKey() {
     setApiKey(apiKey.trim());
     setSaved(true);
-  }
-
-  function saveGKey() {
-    setGeminiKey(geminiKey.trim());
-    setGSaved(true);
   }
 
   function reset() {
@@ -70,19 +60,23 @@ export default function Settings() {
       <Header title="Ajustes" back />
 
       <div className="px-5 space-y-4">
-        {/* Coach IA */}
+        {/* Coach IA (Gemini) */}
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-3">
             <Sparkles size={18} className="text-brand-300" />
             <h2 className="font-bold">Coach IA</h2>
           </div>
           <p className="text-sm text-white/60 mb-3">
-            Conecta tu cuenta de Anthropic para activar el chat, parsing avanzado, planes y recetas con IA.
+            Conecta Google Gemini para activar el chat del coach, el parser de texto natural,
+            la generación de planes y recetas, y el análisis de fotos (IA Vision).
+            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-brand-300 ml-1 underline">
+              Obtener API key gratis
+            </a>
           </p>
           <Input
-            label="API Key de Claude"
+            label="API Key de Gemini"
             type={showKey ? 'text' : 'password'}
-            placeholder="sk-ant-…"
+            placeholder="AIza…"
             value={apiKey}
             onChange={(e) => setKey(e.target.value)}
             rightAction={
@@ -90,49 +84,14 @@ export default function Settings() {
                 {showKey ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             }
-            hint="Se guarda en tu dispositivo. Para producción, mueve la llamada a un backend."
+            hint="Plan gratuito de Google AI Studio. Modelo: gemini-1.5-flash. Una sola key cubre chat y visión."
           />
           <div className="flex items-center gap-2 mt-3">
             <Button onClick={saveKey} disabled={apiKey === getApiKey()}>
               <Save size={16} /> {saved ? 'Guardada' : 'Guardar'}
             </Button>
             <span className={`text-xs ${hasApiKey() ? 'text-emerald-400' : 'text-white/40'}`}>
-              {hasApiKey() ? 'Coach activo' : 'No conectado'}
-            </span>
-          </div>
-        </Card>
-
-        {/* Gemini Vision */}
-        <Card className="p-5">
-          <div className="flex items-center gap-2 mb-3">
-            <Camera size={18} className="text-lime" />
-            <h2 className="font-bold">IA Vision (foto)</h2>
-          </div>
-          <p className="text-sm text-white/60 mb-3">
-            Conecta Google Gemini para que CalCal identifique automáticamente los alimentos de una foto y estime macros.
-            <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer" className="text-brand-300 ml-1 underline">
-              Obtener API key
-            </a>
-          </p>
-          <Input
-            label="API Key de Gemini"
-            type={showGKey ? 'text' : 'password'}
-            placeholder="AIza…"
-            value={geminiKey}
-            onChange={(e) => setGKey(e.target.value)}
-            rightAction={
-              <button type="button" onClick={() => setShowGKey((v) => !v)} className="w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center text-white/40">
-                {showGKey ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            }
-            hint="Plan gratuito de Google AI Studio. Modelo: gemini-2.5-flash."
-          />
-          <div className="flex items-center gap-2 mt-3">
-            <Button onClick={saveGKey} disabled={geminiKey === getGeminiKey()}>
-              <Save size={16} /> {gSaved ? 'Guardada' : 'Guardar'}
-            </Button>
-            <span className={`text-xs ${hasGeminiKey() ? 'text-emerald-400' : 'text-white/40'}`}>
-              {hasGeminiKey() ? 'Vision activo' : 'No conectado'}
+              {hasApiKey() ? 'Coach + Vision activos' : 'No conectado'}
             </span>
           </div>
         </Card>

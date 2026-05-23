@@ -12,7 +12,8 @@
       "Bash(curl -sI http://localhost:4173/)",
       "Bash(curl -s http://localhost:4173/)",
       "Bash(taskkill /F /FI \"WindowTitle eq npm*\")",
-      "Bash(taskkill /F /IM node.exe /FI \"MEMUSAGE gt 50000\")"
+      "Bash(taskkill /F /IM node.exe /FI \"MEMUSAGE gt 50000\")",
+      "Bash(npm uninstall *)"
     ]
   }
 }

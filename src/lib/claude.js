@@ -1,27 +1,102 @@
-// Wrapper de la Claude API. Permite usar env var o key guardada en localStorage.
-// IMPORTANTE: para producción, mover a un backend (serverless function en Vercel)
-// usando ANTHROPIC_API_KEY como secret. Esta versión cliente es para desarrollo / demo.
+// Wrapper de Google Gemini 1.5 Flash. Pese a su nombre histórico (claude.js), este
+// archivo es el cliente unificado de IA para CalCal: coach nutricional, parser de
+// alimentos en texto, generación de planes y recetas, y análisis de fotos (Vision).
+//
+// Una sola API key configura todas las capacidades (texto + visión).
+// La key se almacena bajo 'calcal:gemini_key' para compartirla con cualquier otro
+// módulo que la consulte.
 
-const MODEL = 'claude-sonnet-4-5';
-const API_URL = 'https://api.anthropic.com/v1/messages';
+import { dataUrlToBase64, mimeFromDataUrl } from './image';
 
+const TEXT_MODEL   = 'gemini-1.5-flash';
+const VISION_MODEL = 'gemini-1.5-flash'; // mismo modelo, soporta multimodal
+const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const STORAGE_KEY = 'calcal:gemini_key';
+
+// ---------- API key ----------
 export function getApiKey() {
   return (
-    localStorage.getItem('calcal:anthropic_key') ||
-    import.meta.env.VITE_ANTHROPIC_API_KEY ||
+    localStorage.getItem(STORAGE_KEY) ||
+    import.meta.env.VITE_GEMINI_API_KEY ||
     ''
   );
 }
-
 export function hasApiKey() {
   return Boolean(getApiKey());
 }
-
 export function setApiKey(key) {
-  if (key) localStorage.setItem('calcal:anthropic_key', key);
-  else     localStorage.removeItem('calcal:anthropic_key');
+  if (key) localStorage.setItem(STORAGE_KEY, key);
+  else     localStorage.removeItem(STORAGE_KEY);
 }
 
+// ---------- Helpers ----------
+/**
+ * Convierte un historial estilo Claude (role: 'user' | 'assistant') al formato
+ * que espera Gemini (role: 'user' | 'model', parts: [{ text }]).
+ */
+function toGeminiContents(messages = []) {
+  return messages
+    .filter((m) => m && m.content)
+    .map((m) => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: String(m.content) }]
+    }));
+}
+
+/**
+ * Llamada principal a la API de Gemini.
+ */
+async function callGemini({
+  model = TEXT_MODEL,
+  contents,
+  systemInstruction,
+  temperature = 0.4,
+  maxOutputTokens = 800,
+  responseMimeType
+}) {
+  const key = getApiKey();
+  if (!key) throw new Error('Falta API key de Gemini. Configúrala en Ajustes → Coach IA.');
+
+  const url = `${API_BASE}/${model}:generateContent?key=${encodeURIComponent(key)}`;
+  const body = {
+    contents,
+    generationConfig: { temperature, maxOutputTokens }
+  };
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+  if (responseMimeType) {
+    body.generationConfig.responseMimeType = responseMimeType;
+  }
+
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`Gemini error ${res.status}: ${txt.slice(0, 300)}`);
+  }
+  const data = await res.json();
+  return data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+/**
+ * Extrae el primer bloque JSON razonable de un texto.
+ */
+function safeJsonParse(text) {
+  if (!text) return null;
+  try { return JSON.parse(text.trim()); } catch { /* noop */ }
+  const m = text.match(/\{[\s\S]*\}/);
+  if (m) {
+    try { return JSON.parse(m[0]); } catch { /* noop */ }
+  }
+  return null;
+}
+
+// ---------- System prompts ----------
 const SYSTEM_COACH = `Eres un coach nutricional experto, amable y motivador llamado CalCal.
 Hablas en español por defecto, breve y concreto. Tus consejos son prácticos, basados en evidencia (déficit/superávit calórico, proteína 1.6-2.4 g/kg, distribución de macros, adherencia).
 Nunca das consejos médicos; recomiendas consultar un profesional para condiciones clínicas.
@@ -32,57 +107,51 @@ const SYSTEM_PARSER = `Eres un parser de alimentos en español. Recibes una fras
 {"items":[{"name":"huevo","qty":2,"unit":"unidad","kcal":156,"protein":12,"carbs":1.2,"fat":10,"fiber":0}]}
 Estima valores nutricionales típicos. No incluyas texto fuera del JSON.`;
 
-async function callClaude({ messages, system, max_tokens = 700 }) {
-  const key = getApiKey();
-  if (!key) throw new Error('Falta API key de Claude. Configúrala en Ajustes.');
-
-  const res = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'anthropic-dangerous-direct-browser-access': 'true'
-    },
-    body: JSON.stringify({ model: MODEL, max_tokens, system, messages })
-  });
-
-  if (!res.ok) {
-    const txt = await res.text();
-    throw new Error(`Claude API error: ${res.status} ${txt}`);
-  }
-  const data = await res.json();
-  return data?.content?.[0]?.text || '';
+const SYSTEM_VISION = `Eres un nutricionista experto en identificar alimentos a partir de una foto.
+Analiza la foto y estima los ingredientes principales con sus cantidades aproximadas.
+Devuelve SOLO JSON válido con esta forma exacta:
+{
+  "title": "nombre breve del plato",
+  "items": [
+    { "name": "alimento", "qty": 100, "unit": "g", "kcal": 0, "protein": 0, "carbs": 0, "fat": 0, "fiber": 0 }
+  ],
+  "confidence": "alta" | "media" | "baja"
 }
+Reglas:
+- Estima en gramos, ml o unidades según corresponda.
+- Si no puedes ver bien, marca confidence "baja" y sé conservador.
+- Texto en español.
+- No incluyas texto fuera del JSON.`;
 
+// ---------- Coach (chat) ----------
 export async function coachChat(messages, userContext = '') {
   const system = userContext
     ? `${SYSTEM_COACH}\n\nContexto del usuario:\n${userContext}`
     : SYSTEM_COACH;
-  return callClaude({ system, messages, max_tokens: 600 });
-}
-
-export async function parseWithAI(text) {
-  const out = await callClaude({
-    system: SYSTEM_PARSER,
-    messages: [{ role: 'user', content: text }],
-    max_tokens: 500
+  const contents = toGeminiContents(messages);
+  if (!contents.length) throw new Error('Sin mensajes');
+  return callGemini({
+    systemInstruction: system,
+    contents,
+    temperature: 0.6,
+    maxOutputTokens: 600
   });
-  try {
-    const json = JSON.parse(out.trim());
-    return json.items || [];
-  } catch {
-    // Intenta extraer JSON entre llaves
-    const m = out.match(/\{[\s\S]*\}/);
-    if (m) {
-      try {
-        return JSON.parse(m[0]).items || [];
-      } catch { /* noop */ }
-    }
-    return [];
-  }
 }
 
+// ---------- Parser de texto natural ----------
+export async function parseWithAI(text) {
+  const out = await callGemini({
+    systemInstruction: SYSTEM_PARSER,
+    contents: [{ role: 'user', parts: [{ text }] }],
+    temperature: 0.2,
+    maxOutputTokens: 500,
+    responseMimeType: 'application/json'
+  });
+  const json = safeJsonParse(out);
+  return json?.items || [];
+}
+
+// ---------- Meal plan ----------
 export async function generateMealPlan({ profile, targets, preferences = '' }) {
   const prompt = `Genera un plan de comidas para 1 día con esta configuración:
 - Objetivo: ${profile.goal}
@@ -95,28 +164,81 @@ export async function generateMealPlan({ profile, targets, preferences = '' }) {
 Devuelve SOLO JSON:
 {"meals":[{"name":"Desayuno","items":[{"food":"...","qty":"...","kcal":0,"protein":0,"carbs":0,"fat":0}]}]}`;
 
-  const out = await callClaude({
-    system: 'Eres un nutricionista que devuelve solo JSON válido.',
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 1500
+  const out = await callGemini({
+    systemInstruction: 'Eres un nutricionista. Devuelves SOLO JSON válido, sin texto adicional.',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    temperature: 0.4,
+    maxOutputTokens: 1500,
+    responseMimeType: 'application/json'
   });
-  try {
-    const m = out.match(/\{[\s\S]*\}/);
-    return m ? JSON.parse(m[0]) : { meals: [] };
-  } catch {
-    return { meals: [] };
-  }
+  return safeJsonParse(out) || { meals: [] };
 }
 
+// ---------- Recetas ----------
 export async function generateRecipe({ name, targets }) {
   const prompt = `Crea una receta llamada "${name}" optimizada para:
 - ~${targets.calories || 500} kcal
 - ~${targets.protein || 35}g proteína
 Devuelve markdown breve: ingredientes con cantidades, pasos numerados, macros totales al final.`;
 
-  return callClaude({
-    system: 'Eres un chef nutricionista. Respuestas en español, prácticas, sin paja.',
-    messages: [{ role: 'user', content: prompt }],
-    max_tokens: 700
+  return callGemini({
+    systemInstruction: 'Eres un chef nutricionista. Respuestas en español, prácticas, sin paja.',
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    temperature: 0.6,
+    maxOutputTokens: 700
   });
+}
+
+// ---------- Vision: análisis de fotos ----------
+/**
+ * Analiza una foto y devuelve los alimentos detectados con estimaciones.
+ * @param {string} dataUrl - imagen como data URL (base64 con prefix)
+ * @returns {Promise<{title:string, items:Array, confidence:string}>}
+ */
+export async function analyzeFood(dataUrl) {
+  if (!dataUrl) throw new Error('No hay imagen para analizar');
+
+  const out = await callGemini({
+    model: VISION_MODEL,
+    systemInstruction: SYSTEM_VISION,
+    contents: [
+      {
+        role: 'user',
+        parts: [
+          { text: 'Identifica los alimentos en esta foto y estima sus macros.' },
+          {
+            inline_data: {
+              mime_type: mimeFromDataUrl(dataUrl),
+              data: dataUrlToBase64(dataUrl)
+            }
+          }
+        ]
+      }
+    ],
+    temperature: 0.2,
+    maxOutputTokens: 800,
+    responseMimeType: 'application/json'
+  });
+
+  const parsed = safeJsonParse(out);
+  if (!parsed) throw new Error('Gemini devolvió un formato inesperado.');
+
+  return {
+    title: parsed.title || 'Comida detectada',
+    items: (parsed.items || []).map(normalizeItem),
+    confidence: parsed.confidence || 'media'
+  };
+}
+
+function normalizeItem(it) {
+  return {
+    name: String(it.name || 'Ingrediente'),
+    qty: Number(it.qty) || 1,
+    unit: String(it.unit || 'porción'),
+    kcal: Math.round(Number(it.kcal) || 0),
+    protein: Math.round((Number(it.protein) || 0) * 10) / 10,
+    carbs:   Math.round((Number(it.carbs)   || 0) * 10) / 10,
+    fat:     Math.round((Number(it.fat)     || 0) * 10) / 10,
+    fiber:   Math.round((Number(it.fiber)   || 0) * 10) / 10
+  };
 }
