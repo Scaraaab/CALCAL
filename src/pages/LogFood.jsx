@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Check, Sparkles, Search, Heart, Camera, UtensilsCrossed, Type } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Check, Sparkles, Search, Heart, Camera, UtensilsCrossed, CalendarClock } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Segmented from '../components/ui/Segmented';
 import NaturalInput from '../components/food/NaturalInput';
@@ -10,6 +10,7 @@ import PhotoLog from '../components/food/PhotoLog';
 import SavedMealsRow from '../components/food/SavedMealsRow';
 import { useFoodStore } from '../store/useFoodStore';
 import { fmtNum } from '../utils/format';
+import { todayISO, isValidISO, formatHuman } from '../utils/date';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const MEALS = ['Desayuno', 'Almuerzo', 'Merienda', 'Cena'];
@@ -24,11 +25,27 @@ const MODES = [
 
 export default function LogFood() {
   const nav = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  // Lee la fecha objetivo del query string (?date=YYYY-MM-DD). Si no viene o
+  // es inválida, va a hoy. Así el FAB de la BottomNav puede propagar el día
+  // desde /history sin que el resto de la app sepa de esta convención.
+  const today = todayISO();
+  const dateParam = searchParams.get('date');
+  const targetDate = isValidISO(dateParam) ? dateParam : today;
+  const isAnotherDay = targetDate !== today;
+
   const addEntries = useFoodStore((s) => s.addEntries);
   const bumpMealUseCount = useFoodStore((s) => s.bumpMealUseCount);
   const [meal, setMeal] = useState(guessMeal());
   const [pending, setPending] = useState([]);
   const [mode, setMode] = useState('texto');
+
+  // Tras guardar, vuelve al historial del día si estamos editando un día pasado,
+  // o al dashboard si estamos en hoy.
+  function backDestination() {
+    return isAnotherDay ? `/history?date=${targetDate}` : '/';
+  }
 
   function handleParsed(items) {
     setPending((p) => [...p, ...items]);
@@ -36,8 +53,8 @@ export default function LogFood() {
 
   function commitAll() {
     if (!pending.length) return;
-    addEntries(pending.map((it) => ({ ...it, meal })));
-    nav('/');
+    addEntries(pending.map((it) => ({ ...it, meal })), targetDate);
+    nav(backDestination());
   }
 
   function removePending(idx) {
@@ -45,7 +62,7 @@ export default function LogFood() {
   }
 
   /**
-   * One-tap: registra la comida compuesta directamente al día (sin pending list).
+   * One-tap: registra la comida compuesta directamente al día objetivo (sin pending list).
    */
   function pickSavedMeal(savedMeal) {
     addEntries([{
@@ -61,18 +78,33 @@ export default function LogFood() {
       source: 'meal',
       mealId: savedMeal.id,
       meal
-    }]);
+    }], targetDate);
     bumpMealUseCount(savedMeal.id);
-    nav('/');
+    nav(backDestination());
   }
 
   const totalKcal = pending.reduce((s, x) => s + (x.kcal || 0), 0);
 
   return (
     <div>
-      <Header title="Registrar" subtitle="Comida" back />
+      <Header
+        title="Registrar"
+        subtitle={isAnotherDay ? `Para ${formatHuman(targetDate)}` : 'Comida'}
+        back
+      />
 
       <div className="px-5 space-y-4">
+        {/* Aviso visible cuando estamos editando un día distinto a hoy */}
+        {isAnotherDay && (
+          <div className="card-soft p-3 flex items-center gap-2 text-sm border !border-brand-500/30 !bg-brand-500/10">
+            <CalendarClock size={16} className="text-brand-300 flex-none" />
+            <p className="text-white/85">
+              Añadiendo a <span className="font-semibold capitalize">{formatHuman(targetDate)}</span>
+              <span className="text-white/45"> · {targetDate}</span>
+            </p>
+          </div>
+        )}
+
         {/* Selección de tipo de comida */}
         <Segmented
           value={meal}
@@ -120,7 +152,9 @@ export default function LogFood() {
           {pending.length > 0 && (
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="card p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-wider text-white/40">Por añadir a {meal}</p>
+                <p className="text-xs uppercase tracking-wider text-white/40">
+                  Por añadir a {meal}{isAnotherDay && ` · ${formatHuman(targetDate)}`}
+                </p>
                 <p className="font-bold tabular-nums">{fmtNum(totalKcal)} kcal</p>
               </div>
               <ul className="space-y-1.5">

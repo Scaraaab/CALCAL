@@ -4,6 +4,16 @@ export function todayISO() {
   return toISODate(d);
 }
 
+/**
+ * Valida un string ISO 'YYYY-MM-DD'. Devuelve false para cualquier cosa que no
+ * sea ese formato o que represente una fecha imposible (ej. 2026-13-45).
+ */
+export function isValidISO(s) {
+  if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s);
+  return !isNaN(d.getTime()) && toISODate(d) === s;
+}
+
 export function toISODate(date) {
   const d = new Date(date);
   const y = d.getFullYear();
