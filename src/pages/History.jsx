@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { Calendar, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import MealList from '../components/food/MealList';
@@ -16,15 +16,21 @@ export default function History() {
   //  - El back-button del browser funciona entre días.
   //  - La BottomNav puede leer la fecha actual sin acoplarse al state de este componente.
   //  - Los enlaces son shareables / bookmarkeables.
-  const [params, setParams] = useSearchParams();
+  //
+  // Leemos con useSearchParams (reactivo) pero navegamos con useNavigate
+  // (más predecible que setSearchParams cuando se mezcla "setear" y "limpiar" param).
+  const [params] = useSearchParams();
+  const navigate = useNavigate();
   const today = todayISO();
   const rawParam = params.get('date');
   const date = isValidISO(rawParam) ? rawParam : today;
 
   function goToDate(d) {
-    // Si el destino es hoy, limpiamos el param para mantener la URL bonita.
-    if (d === today) setParams({}, { replace: true });
-    else setParams({ date: d }, { replace: true });
+    // Construimos la URL explícitamente. Si es hoy, omitimos el param para
+    // mantener la URL limpia. replace:true para no llenar el back-stack con
+    // cada flechazo.
+    const target = d === today ? '/history' : `/history?date=${d}`;
+    navigate(target, { replace: true });
   }
 
   const allEntries = useFoodStore((s) => s.entries);
