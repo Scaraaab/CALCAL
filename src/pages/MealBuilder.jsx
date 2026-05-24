@@ -9,8 +9,7 @@ import Sheet from '../components/ui/Sheet';
 import { useFoodStore, ingredientToFood, computeMealTotals } from '../store/useFoodStore';
 import { searchFoods } from '../lib/foodDB';
 import { compressImage } from '../lib/image';
-import { fmtNum } from '../utils/format';
-import { uuid } from '../utils/format';
+import { fmtNum, uuid, sanitizeDecimal, parseDecimal } from '../utils/format';
 
 export default function MealBuilder() {
   const nav = useNavigate();
@@ -185,16 +184,17 @@ function IngredientPicker({ open, onClose, onPick }) {
   const [tab, setTab] = useState('busqueda'); // busqueda | mios | manual
   const [q, setQ] = useState('');
   const [active, setActive] = useState(null);
-  const [qty, setQty] = useState(1);
+  // qtyStr = string durante la edición. Permite vacío. parseDecimal convierte al confirmar.
+  const [qtyStr, setQtyStr] = useState('');
 
-  // Manual mode form
-  const [manual, setManual] = useState({ name: '', qty: 1, unit: 'porción', kcal: '', protein: '', carbs: '', fat: '' });
+  // Manual mode form (todos los numéricos también como string)
+  const [manual, setManual] = useState({ name: '', qty: '', unit: 'porción', kcal: '', protein: '', carbs: '', fat: '' });
 
   function resetAll() {
     setActive(null);
-    setQty(1);
+    setQtyStr('');
     setQ('');
-    setManual({ name: '', qty: 1, unit: 'porción', kcal: '', protein: '', carbs: '', fat: '' });
+    setManual({ name: '', qty: '', unit: 'porción', kcal: '', protein: '', carbs: '', fat: '' });
   }
 
   function pickFromFood(food, quantity) {
@@ -252,7 +252,7 @@ function IngredientPicker({ open, onClose, onPick }) {
               <Search size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-white/40" />
               <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar (pollo, avena…)" className="input pl-11" autoFocus />
             </div>
-            <ResultsList items={dbResults} onPick={(f) => { setActive(f); setQty(f.unit === 'g' || f.unit === 'ml' ? f.baseQty : 1); }} />
+            <ResultsList items={dbResults} onPick={(f) => { setActive(f); setQtyStr(String(f.unit === 'g' || f.unit === 'ml' ? f.baseQty : 1)); }} />
           </>
         )}
 
@@ -262,7 +262,7 @@ function IngredientPicker({ open, onClose, onPick }) {
           ) : (
             <ResultsList
               items={custom.map(ingredientToFood)}
-              onPick={(f) => { setActive(f); setQty(f.unit === 'g' || f.unit === 'ml' ? f.baseQty : 1); }}
+              onPick={(f) => { setActive(f); setQtyStr(String(f.unit === 'g' || f.unit === 'ml' ? f.baseQty : 1)); }}
             />
           )
         )}
@@ -271,14 +271,14 @@ function IngredientPicker({ open, onClose, onPick }) {
           <div className="space-y-3">
             <Input placeholder="Nombre" value={manual.name} onChange={(e) => setManual({ ...manual, name: e.target.value })} />
             <div className="grid grid-cols-2 gap-2">
-              <Input type="number" inputMode="decimal" step="0.1" placeholder="Cantidad" value={manual.qty} onChange={(e) => setManual({ ...manual, qty: e.target.value })} />
+              <Input type="text" inputMode="decimal" autoComplete="off" placeholder="Cantidad" value={manual.qty} onChange={(e) => setManual({ ...manual, qty: sanitizeDecimal(e.target.value) })} />
               <Input placeholder="Unidad (g, ml, porción)" value={manual.unit} onChange={(e) => setManual({ ...manual, unit: e.target.value })} />
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <Input type="number" inputMode="decimal" placeholder="kcal" value={manual.kcal} onChange={(e) => setManual({ ...manual, kcal: e.target.value })} />
-              <Input type="number" inputMode="decimal" step="0.1" placeholder="Proteína (g)" value={manual.protein} onChange={(e) => setManual({ ...manual, protein: e.target.value })} />
-              <Input type="number" inputMode="decimal" step="0.1" placeholder="Carbos (g)" value={manual.carbs} onChange={(e) => setManual({ ...manual, carbs: e.target.value })} />
-              <Input type="number" inputMode="decimal" step="0.1" placeholder="Grasas (g)" value={manual.fat} onChange={(e) => setManual({ ...manual, fat: e.target.value })} />
+              <Input type="text" inputMode="decimal" autoComplete="off" placeholder="kcal" value={manual.kcal} onChange={(e) => setManual({ ...manual, kcal: sanitizeDecimal(e.target.value) })} />
+              <Input type="text" inputMode="decimal" autoComplete="off" placeholder="Proteína (g)" value={manual.protein} onChange={(e) => setManual({ ...manual, protein: sanitizeDecimal(e.target.value) })} />
+              <Input type="text" inputMode="decimal" autoComplete="off" placeholder="Carbos (g)" value={manual.carbs} onChange={(e) => setManual({ ...manual, carbs: sanitizeDecimal(e.target.value) })} />
+              <Input type="text" inputMode="decimal" autoComplete="off" placeholder="Grasas (g)" value={manual.fat} onChange={(e) => setManual({ ...manual, fat: sanitizeDecimal(e.target.value) })} />
             </div>
             <Button
               fullWidth
@@ -286,12 +286,12 @@ function IngredientPicker({ open, onClose, onPick }) {
               onClick={() => {
                 onPick({
                   name: manual.name.trim(),
-                  qty: parseFloat(manual.qty) || 1,
+                  qty: parseDecimal(manual.qty) || 1,
                   unit: manual.unit || 'porción',
-                  kcal: parseFloat(manual.kcal) || 0,
-                  protein: parseFloat(manual.protein) || 0,
-                  carbs: parseFloat(manual.carbs) || 0,
-                  fat: parseFloat(manual.fat) || 0,
+                  kcal:    parseDecimal(manual.kcal),
+                  protein: parseDecimal(manual.protein),
+                  carbs:   parseDecimal(manual.carbs),
+                  fat:     parseDecimal(manual.fat),
                   fiber: 0
                 });
                 resetAll();
@@ -305,10 +305,14 @@ function IngredientPicker({ open, onClose, onPick }) {
         {active && (
           <QtyEditor
             food={active}
-            qty={qty}
-            setQty={setQty}
+            qtyStr={qtyStr}
+            setQtyStr={setQtyStr}
             onCancel={() => setActive(null)}
-            onConfirm={() => pickFromFood(active, qty)}
+            onConfirm={() => {
+              const num = parseDecimal(qtyStr) || 1;
+              if (num <= 0) return;
+              pickFromFood(active, num);
+            }}
           />
         )}
       </div>
@@ -343,10 +347,14 @@ function ResultsList({ items, onPick }) {
   );
 }
 
-function QtyEditor({ food, qty, setQty, onCancel, onConfirm }) {
+function QtyEditor({ food, qtyStr, setQtyStr, onCancel, onConfirm }) {
   const isWeight = food.unit === 'g' || food.unit === 'ml';
   const step = isWeight ? 10 : 0.5;
-  const realScale = isWeight ? (qty / food.baseQty) : qty;
+  // qtyStr es string. parseDecimal lo convierte para el preview en cada render.
+  // Si está vacío, qtyNum = 0 → preview muestra 0 (correcto, el usuario verá los
+  // valores cuando escriba algo).
+  const qtyNum = parseDecimal(qtyStr);
+  const realScale = isWeight ? (qtyNum / food.baseQty) : qtyNum;
   const preview = {
     kcal:    Math.round(food.kcal    * realScale),
     protein: Math.round(food.protein * realScale * 10) / 10,
@@ -367,17 +375,24 @@ function QtyEditor({ food, qty, setQty, onCancel, onConfirm }) {
         </div>
       </div>
       <div className="flex items-center justify-between bg-ink-700/60 rounded-2xl p-2">
-        <button onClick={() => setQty((q) => Math.max(step, +(q - step).toFixed(2)))} className="w-10 h-10 rounded-xl bg-white/5">−</button>
+        <button
+          onClick={() => setQtyStr(String(Math.max(step, +(qtyNum - step).toFixed(2))))}
+          className="w-10 h-10 rounded-xl bg-white/5"
+        >−</button>
         <input
-          type="number"
+          type="text"
           inputMode="decimal"
-          step={step}
-          value={qty}
-          onChange={(e) => setQty(Math.max(0.1, parseFloat(e.target.value) || 0.1))}
+          autoComplete="off"
+          value={qtyStr}
+          onChange={(e) => setQtyStr(sanitizeDecimal(e.target.value))}
+          placeholder="0"
           className="bg-transparent text-center font-bold text-xl w-24 outline-none"
         />
         <span className="text-xs text-white/40 px-2">{food.unit}</span>
-        <button onClick={() => setQty((q) => +(q + step).toFixed(2))} className="w-10 h-10 rounded-xl bg-white/5">+</button>
+        <button
+          onClick={() => setQtyStr(String(+((qtyNum || 0) + step).toFixed(2)))}
+          className="w-10 h-10 rounded-xl bg-white/5"
+        >+</button>
       </div>
       <div className="grid grid-cols-4 gap-2 text-center">
         <Mini label="kcal" v={preview.kcal} />

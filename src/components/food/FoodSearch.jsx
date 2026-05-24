@@ -3,12 +3,16 @@ import { Search, Minus, Plus, Link as LinkIcon } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { searchFoods } from '../../lib/foodDB';
 import { useFoodStore, ingredientToFood } from '../../store/useFoodStore';
-import { fmtNum } from '../../utils/format';
+import { fmtNum, sanitizeDecimal, parseDecimal } from '../../utils/format';
 
 export default function FoodSearch({ onAdd }) {
   const [q, setQ] = useState('');
   const [active, setActive] = useState(null);
-  const [qty, setQty] = useState(1);
+  // qtyStr es el state real: string durante la edición. Permite vacío. parseDecimal
+  // lo convierte a número en cada cálculo y en commit. Esto evita el "0.1 trap" que
+  // tenía el patrón Math.max(0.1, parseFloat(e.target.value) || 0.1).
+  const [qtyStr, setQtyStr] = useState('');
+  const qtyNum = parseDecimal(qtyStr); // 0 si vacío — bien para el preview
   const customIngredients = useFoodStore((s) => s.customIngredients);
 
   const results = useMemo(() => {
@@ -34,6 +38,9 @@ export default function FoodSearch({ onAdd }) {
 
   function commit() {
     if (!active) return;
+    // Conversión string → number SOLO aquí. Si está vacío usa 1 como fallback.
+    const qty = parseDecimal(qtyStr) || 1;
+    if (qty <= 0) return;
     const scale = scaleOf(active, qty);
     onAdd?.({
       name: active.names[0],
@@ -49,12 +56,12 @@ export default function FoodSearch({ onAdd }) {
       fiber:   Math.round((active.fiber || 0) * scale * 10) / 10
     });
     setActive(null);
-    setQty(1);
+    setQtyStr('');
     setQ('');
   }
 
   const preview = active ? (() => {
-    const s = scaleOf(active, qty);
+    const s = scaleOf(active, qtyNum);
     return {
       kcal:    Math.round(active.kcal * s),
       protein: Math.round(active.protein * s * 10) / 10,
@@ -85,7 +92,7 @@ export default function FoodSearch({ onAdd }) {
               {results.map((f) => (
                 <button
                   key={f.id}
-                  onClick={() => { setActive(f); setQty(initialQty(f)); }}
+                  onClick={() => { setActive(f); setQtyStr(String(initialQty(f))); }}
                   className="w-full px-3 py-2.5 rounded-xl bg-white/3 hover:bg-white/8 border border-white/5 text-left flex items-center gap-3"
                 >
                   {f.photo && (
@@ -125,16 +132,28 @@ export default function FoodSearch({ onAdd }) {
             </div>
           </div>
           <div className="flex items-center justify-between bg-ink-700/60 rounded-2xl p-2">
-            <button onClick={() => setQty((q) => Math.max(step, +(q - step).toFixed(2)))} className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center"><Minus size={16} /></button>
+            <button
+              onClick={() => setQtyStr(String(Math.max(step, +(qtyNum - step).toFixed(2))))}
+              className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center"
+            >
+              <Minus size={16} />
+            </button>
             <input
-              type="number"
-              step={step}
-              value={qty}
-              onChange={(e) => setQty(Math.max(0.1, parseFloat(e.target.value) || 0.1))}
+              type="text"
+              inputMode="decimal"
+              autoComplete="off"
+              value={qtyStr}
+              onChange={(e) => setQtyStr(sanitizeDecimal(e.target.value))}
+              placeholder="0"
               className="bg-transparent text-center font-bold text-2xl w-24 outline-none"
             />
             <span className="text-xs text-white/40 pr-2">{active.unit === 'porcion' ? 'porción' : active.unit}</span>
-            <button onClick={() => setQty((q) => +(q + step).toFixed(2))} className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center"><Plus size={16} /></button>
+            <button
+              onClick={() => setQtyStr(String(+((qtyNum || 0) + step).toFixed(2)))}
+              className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center"
+            >
+              <Plus size={16} />
+            </button>
           </div>
           <div className="grid grid-cols-4 gap-2 text-center">
             <Mini label="kcal" val={preview.kcal} />

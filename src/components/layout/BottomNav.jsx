@@ -49,14 +49,17 @@ function Item({ to, icon: Icon, label }) {
     >
       {({ isActive }) => (
         <>
-          <div className="relative">
+          <div className="relative inline-flex">
             <Icon size={20} strokeWidth={isActive ? 2.4 : 2} />
-            {isActive && (
-              <motion.span
-                layoutId="navdot"
-                className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-brand-400"
-              />
-            )}
+            {/* Punto estático bajo el ícono activo. Sin framer-motion: el layoutId
+                hacía que su transform compitiera con el -translate-x-1/2 y quedaba
+                descolocado al cambiar de pestaña. */}
+            <span
+              aria-hidden="true"
+              className={`absolute left-1/2 -translate-x-1/2 -bottom-1.5 w-1.5 h-1.5 rounded-full bg-brand-400 transition-opacity ${
+                isActive ? 'opacity-100' : 'opacity-0'
+              }`}
+            />
           </div>
           <span className="text-[10px] font-medium">{label}</span>
         </>
