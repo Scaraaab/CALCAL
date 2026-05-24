@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Link } from 'react-router-dom';
 import { Calendar, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import MealList from '../components/food/MealList';
@@ -95,32 +95,49 @@ export default function History() {
           </div>
         </details>
 
-        <div className="card relative z-10 p-2 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={() => goToDate(addDays(date, -1))}
-            className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 touch-manipulation select-none"
-            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'rgba(124,92,255,0.25)' }}
+        {/* Botones de día con <Link> en vez de <button onClick>. Es navegación
+            declarativa: el browser sigue el href sin depender de event handlers
+            de React que podrían no dispararse. */}
+        <div className="card relative z-10 p-2 flex items-center justify-between gap-2">
+          <Link
+            to={`/history?date=${addDays(date, -1)}`}
+            replace
+            onClick={() => console.log('%c[History] LEFT tapped', 'color:#c8ff3d', date, '→', addDays(date, -1))}
+            className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 touch-manipulation select-none flex-none"
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'rgba(124,92,255,0.4)' }}
             aria-label="Día anterior"
           >
             <ChevronLeft size={20} />
-          </button>
-          <div className="text-center pointer-events-none select-none">
+          </Link>
+
+          <div className="flex-1 text-center min-w-0 select-none">
             <p className="text-xs uppercase tracking-wider text-white/40 flex items-center gap-1 justify-center">
               <Calendar size={12} /> {date}
             </p>
             <p className="font-bold">{formatHuman(date)}</p>
           </div>
-          <button
-            type="button"
-            onClick={() => goToDate(addDays(date, 1))}
-            disabled={date >= today}
-            className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 disabled:opacity-30 disabled:pointer-events-none touch-manipulation select-none"
-            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'rgba(124,92,255,0.25)' }}
-            aria-label="Día siguiente"
-          >
-            <ChevronRight size={20} />
-          </button>
+
+          {date >= today ? (
+            // Disabled: span en vez de Link
+            <span
+              className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center opacity-30 flex-none select-none"
+              aria-label="Día siguiente (no disponible)"
+              aria-disabled="true"
+            >
+              <ChevronRight size={20} />
+            </span>
+          ) : (
+            <Link
+              to={`/history?date=${addDays(date, 1)}`}
+              replace
+              onClick={() => console.log('%c[History] RIGHT tapped', 'color:#c8ff3d', date, '→', addDays(date, 1))}
+              className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 touch-manipulation select-none flex-none"
+              style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'rgba(124,92,255,0.4)' }}
+              aria-label="Día siguiente"
+            >
+              <ChevronRight size={20} />
+            </Link>
+          )}
         </div>
 
         {entries.length > 0 && (
