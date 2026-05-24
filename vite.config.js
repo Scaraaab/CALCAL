@@ -2,7 +2,19 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Marcador de versión inyectado en build time. Útil para saber al instante
+// qué deployment está corriendo en cada URL — F12 → Console → __calcalBuild
+const BUILD_INFO = JSON.stringify({
+  date: new Date().toISOString(),
+  // Vercel inyecta estas env vars en cada build
+  commit: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) || 'local',
+  branch: process.env.VERCEL_GIT_COMMIT_REF || 'dev'
+});
+
 export default defineConfig({
+  define: {
+    __CALCAL_BUILD__: BUILD_INFO
+  },
   plugins: [
     react(),
     VitePWA({
