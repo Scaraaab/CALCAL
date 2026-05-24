@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { Calendar, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import MealList from '../components/food/MealList';
@@ -12,25 +12,18 @@ import { fmtNum } from '../utils/format';
 import { EMPTY_ARRAY } from '../lib/storage';
 
 export default function History() {
-  // Fecha viaja por URL ?date=YYYY-MM-DD. Así:
-  //  - El back-button del browser funciona entre días.
-  //  - La BottomNav puede leer la fecha actual sin acoplarse al state de este componente.
-  //  - Los enlaces son shareables / bookmarkeables.
-  //
-  // Leemos con useSearchParams (reactivo) pero navegamos con useNavigate
-  // (más predecible que setSearchParams cuando se mezcla "setear" y "limpiar" param).
-  const [params] = useSearchParams();
-  const navigate = useNavigate();
+  // Fecha en URL ?date=YYYY-MM-DD. Implementación deliberadamente simple:
+  //  - SIEMPRE seteamos el param (también para hoy). Sin ramas condicionales
+  //    que puedan resolverse en no-op silencioso.
+  //  - Usamos setSearchParams directo. Es el flujo recomendado de React Router
+  //    para mutar query string y garantiza re-render.
+  const [searchParams, setSearchParams] = useSearchParams();
   const today = todayISO();
-  const rawParam = params.get('date');
+  const rawParam = searchParams.get('date');
   const date = isValidISO(rawParam) ? rawParam : today;
 
   function goToDate(d) {
-    // Construimos la URL explícitamente. Si es hoy, omitimos el param para
-    // mantener la URL limpia. replace:true para no llenar el back-stack con
-    // cada flechazo.
-    const target = d === today ? '/history' : `/history?date=${d}`;
-    navigate(target, { replace: true });
+    setSearchParams({ date: d });
   }
 
   const allEntries = useFoodStore((s) => s.entries);
@@ -44,14 +37,29 @@ export default function History() {
 
       <div className="px-5 space-y-4">
         <div className="card p-3 flex items-center justify-between">
-          <button onClick={() => goToDate(addDays(date, -1))} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center"><ChevronLeft size={18} /></button>
+          <button
+            type="button"
+            onClick={() => goToDate(addDays(date, -1))}
+            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15"
+            aria-label="Día anterior"
+          >
+            <ChevronLeft size={18} />
+          </button>
           <div className="text-center">
             <p className="text-xs uppercase tracking-wider text-white/40 flex items-center gap-1 justify-center">
               <Calendar size={12} /> {date}
             </p>
             <p className="font-bold">{formatHuman(date)}</p>
           </div>
-          <button onClick={() => goToDate(addDays(date, 1))} disabled={date >= today} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center disabled:opacity-30"><ChevronRight size={18} /></button>
+          <button
+            type="button"
+            onClick={() => goToDate(addDays(date, 1))}
+            disabled={date >= today}
+            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 disabled:opacity-30 disabled:pointer-events-none"
+            aria-label="Día siguiente"
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
 
         {entries.length > 0 && (
