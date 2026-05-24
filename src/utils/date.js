@@ -7,11 +7,22 @@ export function todayISO() {
 /**
  * Valida un string ISO 'YYYY-MM-DD'. Devuelve false para cualquier cosa que no
  * sea ese formato o que represente una fecha imposible (ej. 2026-13-45).
+ *
+ * IMPORTANTE: parseamos componentes manualmente en vez de `new Date(s)` porque
+ * éste último trata 'YYYY-MM-DD' como UTC midnight, lo que hace que en
+ * timezones negativos (Americas) el round-trip a fecha local devuelva el día
+ * anterior y la validación falle. El parser local evita ese problema.
  */
 export function isValidISO(s) {
   if (typeof s !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
-  const d = new Date(s);
-  return !isNaN(d.getTime()) && toISODate(d) === s;
+  const [y, m, d] = s.split('-').map(Number);
+  if (m < 1 || m > 12 || d < 1 || d > 31) return false;
+  // Date construido con componentes locales — sin conversión UTC.
+  const date = new Date(y, m - 1, d);
+  return !isNaN(date.getTime())
+      && date.getFullYear() === y
+      && date.getMonth() === m - 1
+      && date.getDate() === d;
 }
 
 export function toISODate(date) {
