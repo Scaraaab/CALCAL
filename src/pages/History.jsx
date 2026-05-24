@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Calendar, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
@@ -12,33 +12,89 @@ import { fmtNum } from '../utils/format';
 import { EMPTY_ARRAY } from '../lib/storage';
 
 export default function History() {
-  // Fecha en URL ?date=YYYY-MM-DD. Implementación deliberadamente simple:
-  //  - SIEMPRE seteamos el param (también para hoy). Sin ramas condicionales
-  //    que puedan resolverse en no-op silencioso.
-  //  - Usamos setSearchParams directo. Es el flujo recomendado de React Router
-  //    para mutar query string y garantiza re-render.
   const [searchParams, setSearchParams] = useSearchParams();
   const today = todayISO();
   const rawParam = searchParams.get('date');
   const date = isValidISO(rawParam) ? rawParam : today;
-
-  function goToDate(d) {
-    // replace:true → no llena el history del browser, así el botón "atrás"
-    // del sistema vuelve a la pantalla anterior en UN solo tap (no N taps
-    // deshaciendo cada cambio de día).
-    setSearchParams({ date: d }, { replace: true });
-  }
 
   const allEntries = useFoodStore((s) => s.entries);
   const entries = allEntries[date] || EMPTY_ARRAY;
   const copyDay = useFoodStore((s) => s.copyDay);
   const totals = useMemo(() => totalsFromEntries(entries), [entries]);
 
+  // Todos los días que tienen entradas (para el panel de diagnóstico)
+  const datesWithData = useMemo(
+    () => Object.keys(allEntries)
+      .filter((d) => (allEntries[d]?.length || 0) > 0)
+      .sort()
+      .reverse()
+      .slice(0, 14),
+    [allEntries]
+  );
+
+  // ──── DEBUG ────
+  // Expuesto en window para inspección rápida: window.__hist
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.__hist = {
+      date,
+      entriesForCurrentDate: entries.length,
+      allDatesWithData: datesWithData,
+      rawParam,
+      urlSearch: window.location.search
+    };
+    console.log('%c[History] date=' + date + ' entries=' + entries.length, 'color:#7c5cff;font-weight:bold', { datesWithData });
+  }, [date, entries.length, datesWithData, rawParam]);
+
+  function goToDate(d) {
+    console.log('%c[History] goToDate', 'color:#c8ff3d', date, '→', d);
+    setSearchParams({ date: d }, { replace: true });
+  }
+
   return (
     <div>
       <Header title="Historial" subtitle="Tu diario" back />
 
       <div className="px-5 space-y-4">
+        {/* ──── PANEL DIAGNÓSTICO ────
+            Muestra qué días tienen datos en el store y resalta el actual.
+            Tap en un día → navega directo (sin depender de las flechas).
+            Quitar cuando se resuelva el debugging. */}
+        <details className="card p-3" open>
+          <summary className="text-xs uppercase tracking-wider text-white/40 cursor-pointer select-none">
+            🔧 Diagnóstico — pulsa un día para ir directo
+          </summary>
+          <div className="mt-3 space-y-2">
+            <p className="text-[11px] text-white/60">
+              Viendo: <span className="font-bold text-brand-300">{date}</span>
+              {' · '}
+              {entries.length} entradas en este día
+            </p>
+            <p className="text-[10px] text-white/40">
+              Días con datos en el store: {datesWithData.length === 0 ? 'ninguno' : `${datesWithData.length}`}
+            </p>
+            {datesWithData.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {datesWithData.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => goToDate(d)}
+                    className={`px-2 py-1 rounded-md text-[10px] font-mono touch-manipulation ${
+                      d === date
+                        ? 'bg-brand-500 text-white'
+                        : 'bg-white/10 text-white/70 hover:bg-white/15'
+                    }`}
+                    style={{ touchAction: 'manipulation' }}
+                  >
+                    {d.slice(5)} ({allEntries[d]?.length || 0})
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
+
         <div className="card relative z-10 p-2 flex items-center justify-between">
           <button
             type="button"
