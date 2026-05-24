@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Calendar, Copy, ChevronLeft, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
@@ -12,20 +12,12 @@ import { fmtNum } from '../utils/format';
 import { EMPTY_ARRAY } from '../lib/storage';
 
 export default function History() {
-  // Bypass total de React Router para la navegación de fechas. Usamos History
-  // API nativa + popstate manual. React Router lee la nueva location via
-  // useLocation y se actualiza solo.
-  //
-  // Por qué: con Link/useNavigate/setSearchParams el pushState llegaba pero
-  // algo (Opera GX? SW residual? extensión del browser?) lo revertía antes
-  // de que React Router se enterara. La History API directa es bulletproof
-  // — la URL CAMBIA en la barra del browser, sin intermediarios.
+  // Leemos el search string directamente de useLocation (siempre refleja la URL real).
+  // Navegamos con History API + popstate manual — la combinación más robusta y
+  // a prueba de cualquier interferencia (SW, browser exotic, extensiones).
   const location = useLocation();
   const today = todayISO();
 
-  // Lee directamente de window.location.search (no de useSearchParams) para
-  // garantizar que reflejamos la URL real, no un estado memoizado de RR.
-  // location.search es reactivo porque cambia cuando popstate se dispara.
   const rawParam = useMemo(() => {
     const sp = new URLSearchParams(location.search);
     return sp.get('date');
@@ -37,53 +29,11 @@ export default function History() {
   const copyDay = useFoodStore((s) => s.copyDay);
   const totals = useMemo(() => totalsFromEntries(entries), [entries]);
 
-  const datesWithData = useMemo(
-    () => Object.keys(allEntries)
-      .filter((d) => (allEntries[d]?.length || 0) > 0)
-      .sort()
-      .reverse()
-      .slice(0, 14),
-    [allEntries]
-  );
-
-  // Track del URL real del browser para mostrarlo en el panel de debug.
-  // Útil para ver si la URL realmente cambia o no después del tap.
-  const [liveUrl, setLiveUrl] = useState(typeof window !== 'undefined' ? window.location.href : '');
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    setLiveUrl(window.location.href);
-    window.__hist = {
-      date,
-      entriesForCurrentDate: entries.length,
-      allDatesWithData: datesWithData,
-      rawParam,
-      locationSearch: location.search,
-      windowSearch: window.location.search,
-      windowHref: window.location.href
-    };
-    console.log(
-      '%c[History] date=' + date + ' entries=' + entries.length,
-      'color:#7c5cff;font-weight:bold',
-      { rawParam, locationSearch: location.search, datesWithData }
-    );
-  }, [date, entries.length, datesWithData, rawParam, location.search]);
-
   function goToDate(d) {
-    console.log('%c[History] goToDate', 'color:#c8ff3d', { from: date, to: d });
-    const newUrl = `/history?date=${d}`;
-
-    // 1. Cambia URL en el browser (siempre funciona, no pasa por React Router)
-    window.history.replaceState(null, '', newUrl);
-
-    // 2. Notifica a React Router para que actualice useLocation()
-    // popstate es el evento que dispara el browser cuando cambias el historial.
-    // Lo disparamos manualmente porque replaceState NO lo dispara solo.
+    // replaceState cambia la URL sin pushear nuevo entry al back-stack.
+    // El popstate manual le dice a React Router que useLocation tiene que releerse.
+    window.history.replaceState(null, '', `/history?date=${d}`);
     window.dispatchEvent(new PopStateEvent('popstate'));
-
-    // 3. Actualiza el state local del live URL display (para ver el cambio al instante)
-    setLiveUrl(window.location.href);
-
-    console.log('%c[History] URL ahora:', 'color:#c8ff3d', window.location.href);
   }
 
   return (
@@ -91,51 +41,6 @@ export default function History() {
       <Header title="Historial" subtitle="Tu diario" back />
 
       <div className="px-5 space-y-4">
-        {/* ──── PANEL DIAGNÓSTICO ────
-            Muestra qué días tienen datos en el store y resalta el actual.
-            Tap en un día → navega directo (sin depender de las flechas).
-            Quitar cuando se resuelva el debugging. */}
-        <details className="card p-3" open>
-          <summary className="text-xs uppercase tracking-wider text-white/40 cursor-pointer select-none">
-            🔧 Diagnóstico — pulsa un día para ir directo
-          </summary>
-          <div className="mt-3 space-y-2">
-            <p className="text-[11px] text-white/60">
-              Viendo: <span className="font-bold text-brand-300">{date}</span>
-              {' · '}
-              {entries.length} entradas en este día
-            </p>
-            <p className="text-[10px] text-white/40 break-all font-mono">
-              URL: {liveUrl.replace(/^https?:\/\/[^/]+/, '')}
-            </p>
-            <p className="text-[10px] text-white/40">
-              Días con datos en el store: {datesWithData.length === 0 ? 'ninguno' : `${datesWithData.length}`}
-            </p>
-            {datesWithData.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {datesWithData.map((d) => (
-                  <button
-                    key={d}
-                    type="button"
-                    onClick={() => goToDate(d)}
-                    className={`px-2 py-1 rounded-md text-[10px] font-mono touch-manipulation ${
-                      d === date
-                        ? 'bg-brand-500 text-white'
-                        : 'bg-white/10 text-white/70 hover:bg-white/15'
-                    }`}
-                    style={{ touchAction: 'manipulation' }}
-                  >
-                    {d.slice(5)} ({allEntries[d]?.length || 0})
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </details>
-
-        {/* Navegación de día con History API directa. Sin Link, sin
-            useNavigate, sin setSearchParams. window.history.replaceState
-            siempre cambia la URL del browser; popstate notifica a RR. */}
         <div className="card relative z-10 p-2 flex items-center justify-between gap-2">
           <button
             type="button"
