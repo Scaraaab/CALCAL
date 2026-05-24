@@ -23,7 +23,10 @@ export default function History() {
   const date = isValidISO(rawParam) ? rawParam : today;
 
   function goToDate(d) {
-    setSearchParams({ date: d });
+    // replace:true → no llena el history del browser, así el botón "atrás"
+    // del sistema vuelve a la pantalla anterior en UN solo tap (no N taps
+    // deshaciendo cada cambio de día).
+    setSearchParams({ date: d }, { replace: true });
   }
 
   const allEntries = useFoodStore((s) => s.entries);
@@ -36,16 +39,17 @@ export default function History() {
       <Header title="Historial" subtitle="Tu diario" back />
 
       <div className="px-5 space-y-4">
-        <div className="card p-3 flex items-center justify-between">
+        <div className="card relative z-10 p-2 flex items-center justify-between">
           <button
             type="button"
             onClick={() => goToDate(addDays(date, -1))}
-            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15"
+            className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 touch-manipulation select-none"
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'rgba(124,92,255,0.25)' }}
             aria-label="Día anterior"
           >
-            <ChevronLeft size={18} />
+            <ChevronLeft size={20} />
           </button>
-          <div className="text-center">
+          <div className="text-center pointer-events-none select-none">
             <p className="text-xs uppercase tracking-wider text-white/40 flex items-center gap-1 justify-center">
               <Calendar size={12} /> {date}
             </p>
@@ -55,10 +59,11 @@ export default function History() {
             type="button"
             onClick={() => goToDate(addDays(date, 1))}
             disabled={date >= today}
-            className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 disabled:opacity-30 disabled:pointer-events-none"
+            className="w-12 h-12 rounded-full bg-white/5 flex items-center justify-center hover:bg-white/10 active:bg-white/15 disabled:opacity-30 disabled:pointer-events-none touch-manipulation select-none"
+            style={{ touchAction: 'manipulation', WebkitTapHighlightColor: 'rgba(124,92,255,0.25)' }}
             aria-label="Día siguiente"
           >
-            <ChevronRight size={18} />
+            <ChevronRight size={20} />
           </button>
         </div>
 
