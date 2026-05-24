@@ -55,68 +55,42 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff2}'],
 
-        // Limpia cachés de versiones previas del SW al activar uno nuevo.
         cleanupOutdatedCaches: true,
-
-        // Activa el SW nuevo inmediatamente sin esperar al cierre de pestañas.
-        // Esto + registerType:'autoUpdate' garantiza que los users reciben los
-        // cambios al recargar.
         skipWaiting: true,
         clientsClaim: true,
 
-        // SPA fallback: cualquier navegación que no resuelva la red recibe
-        // index.html del precache. Sin esto, rutas como /ingredients dan
-        // "no-response" cuando Vercel está lento o el browser está offline.
+        // SPA fallback: cualquier navegación (incluidas las que tienen query string
+        // tipo /history?date=2026-05-23) recibe index.html del precache. React
+        // Router toma el control desde ahí.
+        //
+        // CRÍTICO: NO hay regla catch-all NetworkFirst para same-origin. Esa regla
+        // intentaba cachear cada URL con su query string, fallaba al buscar
+        // "/history?date=..." en cache, y devolvía no-response. Sin esa regla,
+        // las navegaciones caen al navigateFallback (que sí encuentra index.html
+        // en el precache) y los assets estáticos (hashed) los sirve el precache
+        // directamente.
         navigateFallback: '/index.html',
-        // Pero NO aplica el fallback a llamadas API ni a recursos con extensión.
         navigateFallbackDenylist: [
           /^\/api\//,
-          /\.[^/]+$/  // cualquier path con extensión: /assets/x.js, /sw.js, etc.
+          /\.[^/]+$/  // paths con extensión: /assets/x.js, /sw.js, etc. — esos van a red/precache directamente
         ],
 
         runtimeCaching: [
-          // ─── 1. Supabase: NUNCA cachear ni interceptar ───
-          // Auth tokens, datos en vivo, RLS — todo tiene que ir directo a red.
-          // El SW se queda al margen completamente.
-          {
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i,
-            handler: 'NetworkOnly',
-            method: 'GET'
-          },
-          {
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i,
-            handler: 'NetworkOnly',
-            method: 'POST'
-          },
-          {
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i,
-            handler: 'NetworkOnly',
-            method: 'PATCH'
-          },
-          {
-            urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i,
-            handler: 'NetworkOnly',
-            method: 'DELETE'
-          },
+          // Supabase: jamás cachear (auth + datos en vivo + RLS).
+          // Métodos explícitos porque por defecto Workbox solo gestiona GET.
+          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'GET' },
+          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'POST' },
+          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'PATCH' },
+          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'DELETE' },
 
-          // ─── 2. Gemini: NUNCA cachear ───
-          // Respuestas no determinísticas + key sensible en la URL.
-          {
-            urlPattern: /^https:\/\/generativelanguage\.googleapis\.com\/.*/i,
-            handler: 'NetworkOnly'
-          },
+          // Gemini: jamás cachear.
+          { urlPattern: /^https:\/\/generativelanguage\.googleapis\.com\/.*/i, handler: 'NetworkOnly' }
 
-          // ─── 3. Resto del propio origen: NetworkFirst con cache offline ───
-          // App shell, JS/CSS dinámicos, etc. La regla más laxa al final.
-          {
-            urlPattern: ({ url }) => url.origin === self.location.origin,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'app-shell',
-              networkTimeoutSeconds: 3,
-              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 7 }
-            }
-          }
+          // No hay regla genérica para same-origin a propósito:
+          //  - Los assets estáticos (JS/CSS con hash) están en el precache.
+          //  - Las navegaciones (URLs sin extensión, p.ej. /history?date=...) van
+          //    al navigateFallback → sirve index.html → React Router enruta.
+          //  - sw.js y manifest.webmanifest tienen sus propias headers en vercel.json.
         ]
       },
       devOptions: { enabled: false }
