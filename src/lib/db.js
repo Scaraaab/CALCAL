@@ -355,6 +355,7 @@ function rowToMeal(r) {
     photo: r.photo || null,
     items: Array.isArray(r.items) ? r.items : [],
     totals: r.totals || { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+    yieldGrams: r.yield_grams != null ? Number(r.yield_grams) : null,
     useCount: Number(r.use_count) || 0,
     createdAt: new Date(r.created_at).getTime()
   };
@@ -368,6 +369,7 @@ function mealToRow(userId, m) {
     photo: m.photo || null,
     items: m.items || [],
     totals: m.totals || {},
+    yield_grams: m.yieldGrams != null ? Number(m.yieldGrams) : null,
     use_count: m.useCount || 0
   };
 }

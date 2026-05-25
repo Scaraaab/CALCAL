@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Camera, Plus, Search, Trash2, ImageIcon, Loader2, Check, Carrot } from 'lucide-react';
+import { Camera, Plus, Search, Trash2, ImageIcon, Loader2, Check, Carrot, Scale } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
 import Button from '../components/ui/Button';
 import Sheet from '../components/ui/Sheet';
-import { useFoodStore, ingredientToFood, computeMealTotals } from '../store/useFoodStore';
+import { useFoodStore, ingredientToFood, mealToFood, computeMealTotals } from '../store/useFoodStore';
 import { searchFoods } from '../lib/foodDB';
 import { compressImage } from '../lib/image';
 import { fmtNum, uuid, sanitizeDecimal, parseDecimal } from '../utils/format';
@@ -22,10 +22,22 @@ export default function MealBuilder() {
   const [name, setName] = useState(existing?.name || '');
   const [photo, setPhoto] = useState(existing?.photo || null);
   const [items, setItems] = useState(existing?.items || []);
+  // yieldGrams como string para que el campo se pueda dejar vacío durante la
+  // edición. Si está vacío → la comida es solo "porción completa" (no escalable).
+  // Si tiene valor → la comida se puede escalar por gramos y aparece en buscador.
+  const [yieldStr, setYieldStr] = useState(existing?.yieldGrams ? String(existing.yieldGrams) : '');
   const [pickerOpen, setPickerOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const totals = useMemo(() => computeMealTotals(items), [items]);
+  const yieldNum = parseDecimal(yieldStr);
+  // Macros por 100g (solo si hay yield válido)
+  const per100g = yieldNum > 0 ? {
+    kcal:    Math.round(totals.kcal    * 100 / yieldNum),
+    protein: Math.round(totals.protein * 100 / yieldNum * 10) / 10,
+    carbs:   Math.round(totals.carbs   * 100 / yieldNum * 10) / 10,
+    fat:     Math.round(totals.fat     * 100 / yieldNum * 10) / 10
+  } : null;
 
   useEffect(() => {
     // Si el id no corresponde a ninguna comida existente, redirige
@@ -64,7 +76,8 @@ export default function MealBuilder() {
     const payload = {
       name: name.trim(),
       photo,
-      items: items.map(({ _lid, ...rest }) => rest)
+      items: items.map(({ _lid, ...rest }) => rest),
+      yieldGrams: yieldNum > 0 ? yieldNum : null
     };
     if (existing) updateMeal(existing.id, payload);
     else addMeal(payload);
@@ -105,7 +118,7 @@ export default function MealBuilder() {
 
         {/* Totales */}
         <Card className="p-4">
-          <p className="label mb-2">Totales</p>
+          <p className="label mb-2">Totales de la receta</p>
           <div className="flex items-baseline gap-2 mb-2">
             <p className="text-3xl font-extrabold tabular-nums bg-gradient-to-r from-brand-300 to-lime bg-clip-text text-transparent">
               {fmtNum(totals.kcal)}
@@ -117,6 +130,43 @@ export default function MealBuilder() {
             <Macro label="C" value={totals.carbs}   color="text-macro-carbs" />
             <Macro label="G" value={totals.fat}     color="text-macro-fat" />
           </div>
+        </Card>
+
+        {/* Rendimiento (opcional) — convierte la comida en una receta escalable */}
+        <Card className="p-4 space-y-3">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-lime/15 text-lime flex items-center justify-center flex-none mt-0.5">
+              <Scale size={16} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold">Rendimiento (opcional)</p>
+              <p className="text-[11px] text-white/45">
+                Cuántos gramos produce la receta. Si lo defines, podrás registrarla
+                por gramos y aparecerá en el buscador como ingrediente.
+              </p>
+            </div>
+          </div>
+          <Input
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            placeholder="Ej: 1200 (1.2 kg en total)"
+            value={yieldStr}
+            onChange={(e) => setYieldStr(sanitizeDecimal(e.target.value))}
+            rightAction={<span className="px-3 text-xs text-white/40">g</span>}
+          />
+          {per100g && (
+            <div className="bg-ink-700/60 rounded-2xl p-3">
+              <p className="text-[10px] uppercase tracking-wider text-white/40 mb-1">Por 100 g</p>
+              <div className="flex items-baseline gap-2">
+                <p className="text-xl font-bold tabular-nums">{fmtNum(per100g.kcal)}</p>
+                <p className="text-[11px] text-white/40">kcal</p>
+                <p className="text-[11px] text-white/50 ml-2">
+                  P {fmtNum(per100g.protein, 0)} · C {fmtNum(per100g.carbs, 0)} · G {fmtNum(per100g.fat, 0)}
+                </p>
+              </div>
+            </div>
+          )}
         </Card>
 
         {/* Ingredientes */}
@@ -164,6 +214,7 @@ export default function MealBuilder() {
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onPick={(item) => { addPickedItem(item); setPickerOpen(false); }}
+        currentMealId={existing?.id}
       />
     </div>
   );
@@ -178,10 +229,16 @@ function Macro({ label, value, color }) {
   );
 }
 
-// ----- IngredientPicker: añade ingredientes desde DB, custom o manual -----
-function IngredientPicker({ open, onClose, onPick }) {
+// ----- IngredientPicker: añade ingredientes desde DB, custom, recetas o manual -----
+function IngredientPicker({ open, onClose, onPick, currentMealId }) {
   const custom = useFoodStore((s) => s.customIngredients);
-  const [tab, setTab] = useState('busqueda'); // busqueda | mios | manual
+  const allMeals = useFoodStore((s) => s.customMeals);
+  // Recetas escalables, excluyendo la comida que estamos editando (no se puede usar a sí misma)
+  const recipes = useMemo(
+    () => allMeals.filter((m) => m.yieldGrams > 0 && m.id !== currentMealId),
+    [allMeals, currentMealId]
+  );
+  const [tab, setTab] = useState('busqueda'); // busqueda | mios | recetas | manual
   const [q, setQ] = useState('');
   const [active, setActive] = useState(null);
   // qtyStr = string durante la edición. Permite vacío. parseDecimal convierte al confirmar.
@@ -218,6 +275,7 @@ function IngredientPicker({ open, onClose, onPick }) {
       fat:     Math.round(food.fat     * realScale * 10) / 10,
       fiber:   Math.round((food.fiber || 0) * realScale * 10) / 10,
       ingredientId: food.isCustom ? food.id : undefined,
+      mealId: food.isRecipe ? (food.mealId || food.id) : undefined,
       photo: food.photo || undefined
     });
     resetAll();
@@ -228,16 +286,17 @@ function IngredientPicker({ open, onClose, onPick }) {
   return (
     <Sheet open={open} onClose={() => { resetAll(); onClose(); }} title="Añadir ingrediente">
       <div className="space-y-3 pb-4">
-        <div className="flex p-1 rounded-2xl bg-ink-700/60 border border-white/5">
+        <div className="flex p-1 rounded-2xl bg-ink-700/60 border border-white/5 gap-0.5">
           {[
             { v: 'busqueda', l: 'Buscar' },
             { v: 'mios',     l: 'Míos' },
+            ...(recipes.length > 0 ? [{ v: 'recetas', l: 'Recetas' }] : []),
             { v: 'manual',   l: 'Manual' }
           ].map((t) => (
             <button
               key={t.v}
               onClick={() => { setTab(t.v); setActive(null); }}
-              className={`flex-1 py-2 rounded-xl text-sm font-medium transition ${
+              className={`flex-1 py-2 rounded-xl text-xs font-medium transition ${
                 tab === t.v ? 'bg-white text-ink-950' : 'text-white/60'
               }`}
             >
@@ -263,6 +322,20 @@ function IngredientPicker({ open, onClose, onPick }) {
             <ResultsList
               items={custom.map(ingredientToFood)}
               onPick={(f) => { setActive(f); setQtyStr(String(f.unit === 'g' || f.unit === 'ml' ? f.baseQty : 1)); }}
+            />
+          )
+        )}
+
+        {!active && tab === 'recetas' && (
+          recipes.length === 0 ? (
+            <p className="text-center text-sm text-white/40 py-8">
+              No tienes recetas escalables todavía.<br />
+              <span className="text-[11px]">Define un rendimiento (g) en una comida para que aparezca aquí.</span>
+            </p>
+          ) : (
+            <ResultsList
+              items={recipes.map(mealToFood).filter(Boolean)}
+              onPick={(f) => { setActive(f); setQtyStr('100'); /* por defecto 100g */ }}
             />
           )
         )}
@@ -334,7 +407,12 @@ function ResultsList({ items, onPick }) {
             <img src={f.photo} alt="" className="w-9 h-9 rounded-xl object-cover flex-none" />
           )}
           <div className="flex-1 min-w-0 flex items-center gap-2">
-            {f.isCustom && !f.photo && <span className="chip !py-0.5 !px-2 !text-[9px]">Mío</span>}
+            {f.isRecipe && (
+              <span className="chip !py-0.5 !px-2 !text-[9px] !bg-lime/15 !border-lime/30 !text-lime flex-none">Receta</span>
+            )}
+            {f.isCustom && !f.photo && !f.isRecipe && (
+              <span className="chip !py-0.5 !px-2 !text-[9px] flex-none">Mío</span>
+            )}
             <div className="min-w-0">
               <p className="text-sm font-medium capitalize truncate">{f.names?.[0] || f.name}</p>
               <p className="text-[11px] text-white/40 truncate">{f.serving}</p>
@@ -366,6 +444,8 @@ function QtyEditor({ food, qtyStr, setQtyStr, onCancel, onConfirm }) {
       <div className="flex items-center gap-3">
         {food.photo ? (
           <img src={food.photo} alt="" className="w-12 h-12 rounded-2xl object-cover flex-none" />
+        ) : food.isRecipe ? (
+          <span className="chip !text-[10px] !bg-lime/15 !border-lime/30 !text-lime">Receta</span>
         ) : food.isCustom ? (
           <span className="chip !text-[10px]"><Carrot size={11} /> Mío</span>
         ) : null}

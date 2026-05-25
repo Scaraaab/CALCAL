@@ -51,8 +51,16 @@ export default function Meals() {
                 <div className="flex-1 min-w-0 p-3 flex flex-col">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
-                      <p className="font-semibold truncate capitalize">{m.name}</p>
-                      <p className="text-[11px] text-white/40 truncate">{m.items.length} ingrediente{m.items.length === 1 ? '' : 's'}</p>
+                      <div className="flex items-center gap-1.5">
+                        <p className="font-semibold truncate capitalize">{m.name}</p>
+                        {m.yieldGrams > 0 && (
+                          <span className="chip !text-[9px] !py-0.5 !px-1.5 !bg-lime/15 !border-lime/30 !text-lime">Receta</span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-white/40 truncate">
+                        {m.items.length} ingrediente{m.items.length === 1 ? '' : 's'}
+                        {m.yieldGrams > 0 && ` · rinde ${m.yieldGrams}g`}
+                      </p>
                     </div>
                     <div className="flex items-center gap-0.5">
                       <button onClick={() => nav(`/meals/edit/${m.id}`)} className="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-white/50">

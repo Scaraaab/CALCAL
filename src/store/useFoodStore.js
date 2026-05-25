@@ -231,12 +231,16 @@ export const useFoodStore = create(
       // ============ CUSTOM MEALS ============
       addMeal: (meal) => {
         const totals = computeMealTotals(meal.items || []);
+        const yieldGrams = meal.yieldGrams != null && Number(meal.yieldGrams) > 0
+          ? Number(meal.yieldGrams)
+          : null;
         const clean = {
           id: uuid(),
           name: (meal.name || '').trim() || 'Sin nombre',
           photo: meal.photo || null,
           items: meal.items || [],
           totals,
+          yieldGrams,
           useCount: 0,
           createdAt: Date.now()
         };
@@ -250,7 +254,10 @@ export const useFoodStore = create(
           customMeals: s.customMeals.map((m) => {
             if (m.id !== id) return m;
             const items = patch.items || m.items;
-            updated = { ...m, ...patch, items, totals: computeMealTotals(items) };
+            const yieldGrams = patch.yieldGrams !== undefined
+              ? (patch.yieldGrams != null && Number(patch.yieldGrams) > 0 ? Number(patch.yieldGrams) : null)
+              : m.yieldGrams;
+            updated = { ...m, ...patch, items, yieldGrams, totals: computeMealTotals(items) };
             return updated;
           })
         }));
@@ -431,6 +438,50 @@ export function computeMealTotals(items = []) {
     }),
     { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 }
   );
+}
+
+/**
+ * Convierte una comida compuesta CON yieldGrams en formato compatible con FOOD_DB.
+ * La receta se presenta como un alimento "por 100g" en el buscador.
+ *
+ *   meal.totals.kcal      ÷ meal.yieldGrams × 100 = kcal por 100g
+ *
+ * @returns {object|null} food shape o null si la comida no tiene yieldGrams.
+ */
+export function mealToFood(meal) {
+  if (!meal?.yieldGrams || meal.yieldGrams <= 0) return null;
+  const f = 100 / meal.yieldGrams;
+  return {
+    id: meal.id,
+    isRecipe: true,
+    names: [meal.name],
+    unit: 'g',
+    baseQty: 100,
+    serving: `Receta · rinde ${meal.yieldGrams}g`,
+    kcal:    Math.round(meal.totals.kcal * f),
+    protein: round1(meal.totals.protein * f),
+    carbs:   round1(meal.totals.carbs * f),
+    fat:     round1(meal.totals.fat * f),
+    fiber:   round1((meal.totals.fiber || 0) * f),
+    photo: meal.photo || null,
+    mealId: meal.id // para que la entry resultante pueda referenciar la receta
+  };
+}
+
+/**
+ * Devuelve los macros de una receta para X gramos consumidos.
+ * Útil al añadir al diario "por gramos".
+ */
+export function scaleMealByGrams(meal, grams) {
+  if (!meal?.yieldGrams || meal.yieldGrams <= 0) return null;
+  const f = Number(grams) / meal.yieldGrams;
+  return {
+    kcal:    Math.round(meal.totals.kcal * f),
+    protein: round1(meal.totals.protein * f),
+    carbs:   round1(meal.totals.carbs * f),
+    fat:     round1(meal.totals.fat * f),
+    fiber:   round1((meal.totals.fiber || 0) * f)
+  };
 }
 
 function round1(n) { return Math.round(n * 10) / 10; }

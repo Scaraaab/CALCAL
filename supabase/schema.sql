@@ -84,15 +84,18 @@ create index if not exists custom_ingredients_user_idx on public.custom_ingredie
 
 -- ---------- custom_meals ----------
 create table if not exists public.custom_meals (
-  id          uuid primary key,
-  user_id     uuid not null references auth.users on delete cascade,
-  name        text not null,
-  photo       text,
-  items       jsonb not null default '[]'::jsonb,
-  totals      jsonb not null default '{}'::jsonb,
-  use_count   int not null default 0,
-  created_at  timestamptz not null default now()
+  id           uuid primary key,
+  user_id      uuid not null references auth.users on delete cascade,
+  name         text not null,
+  photo        text,
+  items        jsonb not null default '[]'::jsonb,
+  totals       jsonb not null default '{}'::jsonb,
+  use_count    int not null default 0,
+  yield_grams  numeric,
+  created_at   timestamptz not null default now()
 );
+-- Migración para esquemas viejos (sin yield_grams)
+alter table public.custom_meals add column if not exists yield_grams numeric;
 create index if not exists custom_meals_user_idx on public.custom_meals (user_id);
 
 -- ============================================================

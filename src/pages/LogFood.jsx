@@ -8,6 +8,7 @@ import FoodSearch from '../components/food/FoodSearch';
 import QuickFoods from '../components/food/QuickFoods';
 import PhotoLog from '../components/food/PhotoLog';
 import SavedMealsRow from '../components/food/SavedMealsRow';
+import SavedMealPicker from '../components/food/SavedMealPicker';
 import { useFoodStore } from '../store/useFoodStore';
 import { fmtNum } from '../utils/format';
 import { todayISO, isValidISO, formatHuman } from '../utils/date';
@@ -40,6 +41,8 @@ export default function LogFood() {
   const [meal, setMeal] = useState(guessMeal());
   const [pending, setPending] = useState([]);
   const [mode, setMode] = useState('texto');
+  // Sheet del picker — solo se abre para meals con yieldGrams definido
+  const [pickerMeal, setPickerMeal] = useState(null);
 
   // Tras guardar, vuelve al historial del día si estamos editando un día pasado,
   // o al dashboard si estamos en hoy.
@@ -62,9 +65,16 @@ export default function LogFood() {
   }
 
   /**
-   * One-tap: registra la comida compuesta directamente al día objetivo (sin pending list).
+   * Selección de comida guardada:
+   *  - Si tiene yieldGrams → abre el Sheet picker (porción completa | por gramos)
+   *  - Si NO tiene yieldGrams → one-tap: registra la porción completa directamente
    */
   function pickSavedMeal(savedMeal) {
+    if (savedMeal.yieldGrams > 0) {
+      setPickerMeal(savedMeal);
+      return;
+    }
+    // One-tap clásico
     addEntries([{
       name: savedMeal.name,
       qty: 1,
@@ -80,6 +90,14 @@ export default function LogFood() {
       meal
     }], targetDate);
     bumpMealUseCount(savedMeal.id);
+    nav(backDestination());
+  }
+
+  // Confirmación desde el picker (porción completa o por gramos)
+  function confirmFromPicker(entry) {
+    addEntries([{ ...entry, meal }], targetDate);
+    if (pickerMeal) bumpMealUseCount(pickerMeal.id);
+    setPickerMeal(null);
     nav(backDestination());
   }
 
@@ -179,6 +197,13 @@ export default function LogFood() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Sheet para meals con yieldGrams: porción vs gramos */}
+      <SavedMealPicker
+        meal={pickerMeal}
+        onClose={() => setPickerMeal(null)}
+        onConfirm={confirmFromPicker}
+      />
     </div>
   );
 }
