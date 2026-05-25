@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
-import { Search, Minus, Plus, Link as LinkIcon } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, Minus, Plus, Link as LinkIcon, Loader2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { searchFoods } from '../../lib/foodDB';
 import { useFoodStore, ingredientToFood, mealToFood } from '../../store/useFoodStore';
+import { fetchCommunityIngredients, fetchCommunityMeals } from '../../lib/db';
 import { fmtNum, sanitizeDecimal, parseDecimal } from '../../utils/format';
 
 export default function FoodSearch({ onAdd }) {
@@ -12,6 +13,46 @@ export default function FoodSearch({ onAdd }) {
   const qtyNum = parseDecimal(qtyStr);
   const customIngredients = useFoodStore((s) => s.customIngredients);
   const customMeals = useFoodStore((s) => s.customMeals);
+
+  // Estado para búsqueda comunitaria (async, debounced)
+  const [communityIngs, setCommunityIngs] = useState([]);
+  const [communityMls, setCommunityMls] = useState([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const currentQuery = useRef(q);
+  currentQuery.current = q;
+
+  // Debounced fetch a community
+  useEffect(() => {
+    const query = q.trim();
+    if (query.length < 2) {
+      setCommunityIngs([]);
+      setCommunityMls([]);
+      setCommunityLoading(false);
+      return;
+    }
+    setCommunityLoading(true);
+    const handle = setTimeout(async () => {
+      const qAtFire = query;
+      try {
+        const [ings, mls] = await Promise.all([
+          fetchCommunityIngredients(qAtFire, 10),
+          fetchCommunityMeals(qAtFire, 6)
+        ]);
+        // Race protection: solo actualizamos si la query sigue siendo la misma
+        if (currentQuery.current.trim() === qAtFire) {
+          setCommunityIngs(ings);
+          setCommunityMls(mls.filter((m) => m.yieldGrams > 0));
+        }
+      } catch (e) {
+        console.warn('[FoodSearch] community fetch error', e);
+      } finally {
+        if (currentQuery.current.trim() === qAtFire) {
+          setCommunityLoading(false);
+        }
+      }
+    }, 350);
+    return () => clearTimeout(handle);
+  }, [q]);
 
   const results = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -23,15 +64,73 @@ export default function FoodSearch({ onAdd }) {
       .slice(0, 8)
       .map(ingredientToFood);
 
-    // Recetas escalables (chip "Receta"). Solo las que tienen yieldGrams definido.
+    // Recetas escalables propias (chip "Receta")
     const recipeMatches = customMeals
       .filter((m) => m.yieldGrams > 0 && (!query || m.name.toLowerCase().includes(query)))
       .slice(0, 8)
       .map(mealToFood)
       .filter(Boolean);
 
-    return [...recipeMatches, ...customMatches, ...dbResults].slice(0, 24);
-  }, [q, customIngredients, customMeals]);
+    // Set de shareIds que el usuario YA tiene en sus copias personales,
+    // para no mostrar duplicados en los resultados de community.
+    const ownedShareIds = new Set([
+      ...customIngredients.map((i) => i.shareId).filter(Boolean),
+      ...customMeals.map((m) => m.shareId).filter(Boolean)
+    ]);
+
+    // Community ingredients (chip "CalCal")
+    const communityIngMatches = communityIngs
+      .filter((c) => !ownedShareIds.has(c.shareId))
+      .map((c) => ({
+        id: 'comm-ing-' + c.shareId,
+        isCommunity: true,
+        communityShareId: c.shareId,
+        createdByName: c.createdByName,
+        names: [c.name],
+        unit: c.measureType === 'per100g' ? 'g' : c.measureType === 'unit' ? 'unidad' : 'porcion',
+        baseQty: c.measureType === 'per100g' ? 100 : 1,
+        serving: c.servingLabel || (c.measureType === 'per100g' ? '100g' : c.measureType === 'unit' ? '1 unidad' : '1 porción'),
+        kcal: c.kcal,
+        protein: c.protein,
+        carbs: c.carbs,
+        fat: c.fat,
+        fiber: c.fiber,
+        photo: c.photo
+      }));
+
+    // Community recipes (chip "CalCal" + "Receta")
+    const communityRecipeMatches = communityMls
+      .filter((c) => !ownedShareIds.has(c.shareId))
+      .map((c) => {
+        const f = 100 / c.yieldGrams;
+        return {
+          id: 'comm-meal-' + c.shareId,
+          isCommunity: true,
+          isRecipe: true,
+          communityShareId: c.shareId,
+          createdByName: c.createdByName,
+          names: [c.name],
+          unit: 'g',
+          baseQty: 100,
+          serving: `Receta · rinde ${c.yieldGrams}g · ${c.createdByName}`,
+          kcal:    Math.round(c.totals.kcal * f),
+          protein: Math.round(c.totals.protein * f * 10) / 10,
+          carbs:   Math.round(c.totals.carbs * f * 10) / 10,
+          fat:     Math.round(c.totals.fat * f * 10) / 10,
+          fiber:   Math.round((c.totals.fiber || 0) * f * 10) / 10,
+          photo: c.photo
+        };
+      });
+
+    // Orden: recetas propias → ingredientes propios → recetas comunidad → ingredientes comunidad → DB built-in
+    return [
+      ...recipeMatches,
+      ...customMatches,
+      ...communityRecipeMatches,
+      ...communityIngMatches,
+      ...dbResults
+    ].slice(0, 30);
+  }, [q, customIngredients, customMeals, communityIngs, communityMls]);
 
   // Cantidad inicial sugerida cuando se selecciona un alimento
   function initialQty(food) {
@@ -56,8 +155,9 @@ export default function FoodSearch({ onAdd }) {
       unit: active.unit === 'porcion' ? 'porción' : active.unit,
       serving: active.serving,
       ingredientId: active.isCustom ? active.id : undefined,
-      mealId: active.isRecipe ? (active.mealId || active.id) : undefined, // ← receta usada como ingrediente
-      source: active.isRecipe ? 'meal-grams' : undefined,
+      mealId: active.isRecipe && !active.isCommunity ? (active.mealId || active.id) : undefined,
+      communityShareId: active.isCommunity ? active.communityShareId : undefined,
+      source: active.isCommunity ? 'community' : active.isRecipe ? 'meal-grams' : undefined,
       photo: active.photo || undefined,
       kcal:    Math.round(active.kcal    * scale),
       protein: Math.round(active.protein * scale * 10) / 10,
@@ -90,9 +190,12 @@ export default function FoodSearch({ onAdd }) {
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Buscar (pollo, avena, mis ingredientes…)"
-          className="input pl-11"
+          placeholder="Buscar (pollo, avena, comunidad CalCal…)"
+          className="input pl-11 pr-10"
         />
+        {communityLoading && (
+          <Loader2 size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40 animate-spin" />
+        )}
       </div>
 
       {!active && (
@@ -109,10 +212,15 @@ export default function FoodSearch({ onAdd }) {
                     <img src={f.photo} alt="" className="w-9 h-9 rounded-xl object-cover flex-none" />
                   )}
                   <div className="flex-1 min-w-0 flex items-center gap-2">
-                    {f.isRecipe && (
+                    {f.isCommunity && (
+                      <span className="chip !text-[9px] !py-0.5 !px-2 !bg-brand-500/15 !border-brand-500/30 !text-brand-300 flex-none">
+                        CalCal
+                      </span>
+                    )}
+                    {f.isRecipe && !f.isCommunity && (
                       <span className="chip !text-[9px] !py-0.5 !px-2 !bg-lime/15 !border-lime/30 !text-lime flex-none">Receta</span>
                     )}
-                    {f.isCustom && !f.photo && !f.isRecipe && (
+                    {f.isCustom && !f.photo && !f.isRecipe && !f.isCommunity && (
                       <span className="chip !text-[9px] !py-0.5 !px-2 flex-none">Mío</span>
                     )}
                     <div className="min-w-0">
@@ -138,6 +246,8 @@ export default function FoodSearch({ onAdd }) {
           <div className="flex items-center gap-3">
             {active.photo ? (
               <img src={active.photo} alt="" className="w-12 h-12 rounded-2xl object-cover flex-none" />
+            ) : active.isCommunity ? (
+              <span className="chip !text-[10px] !bg-brand-500/15 !border-brand-500/30 !text-brand-300">CalCal</span>
             ) : active.isRecipe ? (
               <span className="chip !text-[10px] !bg-lime/15 !border-lime/30 !text-lime">Receta</span>
             ) : active.isCustom ? (

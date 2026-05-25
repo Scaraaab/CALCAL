@@ -34,6 +34,10 @@ export const useFoodStore = create(
       customIngredients: [],
       customMeals: [],
 
+      // Nombre del usuario para etiquetar contribuciones a community.
+      // Lo setea App.jsx tras hydrate. Underscore prefix → no se persiste lógicamente.
+      _communityUserName: '',
+
       // ============ ENTRIES ============
       addEntry: (entry, date = todayISO()) => {
         const e = { id: uuid(), meal: entry.meal || guessMeal(), createdAt: Date.now(), ...entry };
@@ -156,6 +160,7 @@ export const useFoodStore = create(
         log('addIngredient → recibido', ing);
         const clean = {
           id: uuid(),
+          shareId: uuid(), // ← share_id único global para emparejar con community
           name: (ing.name || '').trim(),
           measureType: ing.measureType || 'per100g',
           baseQty: ing.measureType === 'per100g' ? 100 : 1,
@@ -177,7 +182,7 @@ export const useFoodStore = create(
         const after = get().customIngredients.length;
         log(`addIngredient → local: ${before} → ${after}`, { id: clean.id, name: clean.name });
 
-        // write-through con verificación
+        // write-through con verificación (personal)
         db.upsertIngredient(clean).then((res) => {
           if (res?.ok) {
             log(`addIngredient → Supabase OK: ${clean.name}`);
@@ -187,6 +192,10 @@ export const useFoodStore = create(
         }).catch((err) => {
           logErr('addIngredient → upsert promise rechazada', err);
         });
+
+        // Publicar a community (fire-and-forget, ignoreDuplicates si ya existe)
+        const userName = get()._communityUserName || '';
+        db.pushCommunityIngredient(clean, userName);
 
         return clean;
       },
@@ -199,7 +208,12 @@ export const useFoodStore = create(
             return updated;
           })
         }));
-        if (updated) db.upsertIngredient(updated);
+        if (updated) {
+          db.upsertIngredient(updated);
+          // Propaga edición a community si tiene shareId. RLS filtra: solo el
+          // creador puede actualizar; para otros usuarios es un no-op silencioso.
+          if (updated.shareId) db.updateCommunityIngredient(updated);
+        }
       },
       removeIngredient: (id) => {
         const target = get().customIngredients.find((i) => i.id === id);
@@ -236,6 +250,7 @@ export const useFoodStore = create(
           : null;
         const clean = {
           id: uuid(),
+          shareId: uuid(), // ← share_id único global
           name: (meal.name || '').trim() || 'Sin nombre',
           photo: meal.photo || null,
           items: meal.items || [],
@@ -246,6 +261,9 @@ export const useFoodStore = create(
         };
         set((s) => ({ customMeals: [clean, ...s.customMeals] }));
         db.upsertMeal(clean);
+        // Publicar a community (fire-and-forget)
+        const userName = get()._communityUserName || '';
+        db.pushCommunityMeal(clean, userName);
         return clean;
       },
       updateMeal: (id, patch) => {
@@ -261,7 +279,20 @@ export const useFoodStore = create(
             return updated;
           })
         }));
-        if (updated) db.upsertMeal(updated);
+        if (updated) {
+          db.upsertMeal(updated);
+          if (updated.shareId) db.updateCommunityMeal(updated);
+        }
+      },
+
+      /**
+       * Borra una fila de community SIN tocar la copia personal.
+       * Solo el creador puede; RLS lo enforza.
+       */
+      removeFromCommunity: (kind, shareId) => {
+        if (!shareId) return;
+        if (kind === 'ingredient') db.removeCommunityIngredient(shareId);
+        else if (kind === 'meal')  db.removeCommunityMeal(shareId);
       },
       removeMeal: (id) => {
         set((s) => ({ customMeals: s.customMeals.filter((m) => m.id !== id) }));
@@ -332,6 +363,67 @@ export const useFoodStore = create(
           customMeals:       get().customMeals.length
         });
         console.groupEnd();
+      },
+
+      /**
+       * Sincroniza ingredientes y comidas personales con la base de datos
+       * comunitaria. Llamar después de hydrate, tras cada login.
+       *
+       * Para cada ítem sin shareId, genera uno y actualiza la copia personal
+       * (local + Supabase). Después hace upsert batch a community con
+       * ignoreDuplicates (no sobreescribe si otro usuario ya lo publicó con
+       * ese share_id — caso prácticamente imposible porque UUIDs son únicos).
+       */
+      syncToCommunity: async (userName) => {
+        const state = get();
+        // Guardamos el nombre para futuras publicaciones (las que vienen de
+        // addIngredient/addMeal después del sync inicial).
+        set({ _communityUserName: userName || '' });
+
+        const personalIngs = state.customIngredients;
+        const personalMeals = state.customMeals;
+
+        // 1. Genera shareId para los que no tienen
+        const ingFixes = [];
+        const ingsWithIds = personalIngs.map((i) => {
+          if (i.shareId) return i;
+          const shareId = uuid();
+          ingFixes.push({ id: i.id, shareId });
+          return { ...i, shareId };
+        });
+        const mealFixes = [];
+        const mealsWithIds = personalMeals.map((m) => {
+          if (m.shareId) return m;
+          const shareId = uuid();
+          mealFixes.push({ id: m.id, shareId });
+          return { ...m, shareId };
+        });
+
+        // 2. Actualiza local con los nuevos shareIds
+        if (ingFixes.length || mealFixes.length) {
+          log(`syncToCommunity → ${ingFixes.length} ingr + ${mealFixes.length} comidas necesitan shareId`);
+          set((s) => ({
+            customIngredients: s.customIngredients.map((i) => {
+              const f = ingFixes.find((x) => x.id === i.id);
+              return f ? { ...i, shareId: f.shareId } : i;
+            }),
+            customMeals: s.customMeals.map((m) => {
+              const f = mealFixes.find((x) => x.id === m.id);
+              return f ? { ...m, shareId: f.shareId } : m;
+            })
+          }));
+        }
+
+        // 3. Persiste los shareIds en personal (Supabase) + publica en community
+        try {
+          if (ingFixes.length) await db.upsertIngredientsBatch(ingsWithIds);
+          if (mealFixes.length) await db.upsertMealsBatch(mealsWithIds);
+          await db.pushCommunityIngredientsBatch(ingsWithIds, userName);
+          await db.pushCommunityMealsBatch(mealsWithIds, userName);
+          log(`syncToCommunity → OK (${ingsWithIds.length} ingr, ${mealsWithIds.length} comidas)`);
+        } catch (err) {
+          logErr('syncToCommunity error', err);
+        }
       },
 
       /** Limpia todo (logout). */

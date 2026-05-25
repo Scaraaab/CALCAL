@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, Sparkles, Search, Heart, Camera, UtensilsCrossed, CalendarClock } from 'lucide-react';
+import { Check, Sparkles, Search, Heart, Camera, UtensilsCrossed, CalendarClock, Coffee, Soup, Cookie, Utensils, Trash2 } from 'lucide-react';
 import Header from '../components/layout/Header';
-import Segmented from '../components/ui/Segmented';
 import NaturalInput from '../components/food/NaturalInput';
 import FoodSearch from '../components/food/FoodSearch';
 import QuickFoods from '../components/food/QuickFoods';
@@ -14,23 +13,25 @@ import { fmtNum } from '../utils/format';
 import { todayISO, isValidISO, formatHuman } from '../utils/date';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const MEALS = ['Desayuno', 'Almuerzo', 'Merienda', 'Cena'];
+const MEALS = [
+  { value: 'Desayuno', icon: Coffee },
+  { value: 'Almuerzo', icon: Utensils },
+  { value: 'Merienda', icon: Cookie },
+  { value: 'Cena',     icon: Soup }
+];
 
 const MODES = [
-  { value: 'texto',   label: 'Texto IA', icon: Sparkles },
-  { value: 'foto',    label: 'Foto',     icon: Camera },
-  { value: 'mias',    label: 'Mis comidas', icon: UtensilsCrossed },
-  { value: 'buscar',  label: 'Buscar',   icon: Search },
-  { value: 'rapidos', label: 'Rápidos',  icon: Heart }
+  { value: 'texto',   label: 'Texto IA',      icon: Sparkles,        hint: 'Describe la comida' },
+  { value: 'foto',    label: 'Foto',          icon: Camera,          hint: 'Saca/sube una foto' },
+  { value: 'mias',    label: 'Mis comidas',   icon: UtensilsCrossed, hint: 'Recetas guardadas' },
+  { value: 'buscar',  label: 'Buscar',        icon: Search,          hint: 'Comunidad + DB' },
+  { value: 'rapidos', label: 'Rápidos',       icon: Heart,           hint: 'Favoritos y frecuentes' }
 ];
 
 export default function LogFood() {
   const nav = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // Lee la fecha objetivo del query string (?date=YYYY-MM-DD). Si no viene o
-  // es inválida, va a hoy. Así el FAB de la BottomNav puede propagar el día
-  // desde /history sin que el resto de la app sepa de esta convención.
   const today = todayISO();
   const dateParam = searchParams.get('date');
   const targetDate = isValidISO(dateParam) ? dateParam : today;
@@ -38,14 +39,12 @@ export default function LogFood() {
 
   const addEntries = useFoodStore((s) => s.addEntries);
   const bumpMealUseCount = useFoodStore((s) => s.bumpMealUseCount);
+  const customMeals = useFoodStore((s) => s.customMeals);
   const [meal, setMeal] = useState(guessMeal());
   const [pending, setPending] = useState([]);
   const [mode, setMode] = useState('texto');
-  // Sheet del picker — solo se abre para meals con yieldGrams definido
   const [pickerMeal, setPickerMeal] = useState(null);
 
-  // Tras guardar, vuelve al historial del día si estamos editando un día pasado,
-  // o al dashboard si estamos en hoy.
   function backDestination() {
     return isAnotherDay ? `/history?date=${targetDate}` : '/';
   }
@@ -64,17 +63,11 @@ export default function LogFood() {
     setPending((p) => p.filter((_, i) => i !== idx));
   }
 
-  /**
-   * Selección de comida guardada:
-   *  - Si tiene yieldGrams → abre el Sheet picker (porción completa | por gramos)
-   *  - Si NO tiene yieldGrams → one-tap: registra la porción completa directamente
-   */
   function pickSavedMeal(savedMeal) {
     if (savedMeal.yieldGrams > 0) {
       setPickerMeal(savedMeal);
       return;
     }
-    // One-tap clásico
     addEntries([{
       name: savedMeal.name,
       qty: 1,
@@ -93,7 +86,6 @@ export default function LogFood() {
     nav(backDestination());
   }
 
-  // Confirmación desde el picker (porción completa o por gramos)
   function confirmFromPicker(entry) {
     addEntries([{ ...entry, meal }], targetDate);
     if (pickerMeal) bumpMealUseCount(pickerMeal.id);
@@ -102,17 +94,18 @@ export default function LogFood() {
   }
 
   const totalKcal = pending.reduce((s, x) => s + (x.kcal || 0), 0);
+  const totalProtein = pending.reduce((s, x) => s + (x.protein || 0), 0);
 
   return (
-    <div>
+    <div className={pending.length > 0 ? 'pb-44' : ''}>
       <Header
         title="Registrar"
         subtitle={isAnotherDay ? `Para ${formatHuman(targetDate)}` : 'Comida'}
         back
       />
 
-      <div className="px-5 space-y-4">
-        {/* Aviso visible cuando estamos editando un día distinto a hoy */}
+      <div className="px-5 space-y-6">
+        {/* Banner cuando estamos editando un día distinto a hoy */}
         {isAnotherDay && (
           <div className="card-soft p-3 flex items-center gap-2 text-sm border !border-brand-500/30 !bg-brand-500/10">
             <CalendarClock size={16} className="text-brand-300 flex-none" />
@@ -123,82 +116,122 @@ export default function LogFood() {
           </div>
         )}
 
-        {/* Selección de tipo de comida */}
-        <Segmented
-          value={meal}
-          onChange={setMeal}
-          options={MEALS.map((m) => ({ value: m, label: m }))}
-          className="w-full overflow-x-auto"
-        />
-
-        {/* Fila de comidas guardadas (always-on, one-tap) */}
-        <div>
-          <div className="flex items-center justify-between mb-2 px-1">
-            <p className="label">Mis comidas · one-tap</p>
+        {/* HERO — qué momento del día */}
+        <section>
+          <p className="label mb-2">Momento del día</p>
+          <div className="grid grid-cols-4 gap-2">
+            {MEALS.map((m) => {
+              const Icon = m.icon;
+              const active = m.value === meal;
+              return (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMeal(m.value)}
+                  className={`flex flex-col items-center gap-1 py-3 rounded-2xl border transition active:scale-[0.96] ${
+                    active
+                      ? 'bg-gradient-to-br from-brand-500/30 to-brand-700/20 border-brand-500/60 text-white shadow-glow'
+                      : 'bg-white/3 border-white/5 text-white/55 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Icon size={20} strokeWidth={active ? 2.4 : 2} />
+                  <span className="text-[11px] font-medium">{m.value}</span>
+                </button>
+              );
+            })}
           </div>
-          <SavedMealsRow onPick={pickSavedMeal} layout="row" />
-        </div>
+        </section>
 
-        {/* Selector de modo en pills horizontales */}
-        <div className="flex gap-2 overflow-x-auto no-scrollbar -mx-5 px-5 pb-1">
-          {MODES.map((m) => {
-            const Icon = m.icon;
-            const active = m.value === mode;
-            return (
-              <button
-                key={m.value}
-                onClick={() => setMode(m.value)}
-                className={`flex-none inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border transition ${
-                  active
-                    ? 'bg-white text-ink-950 border-white'
-                    : 'bg-white/3 text-white/65 border-white/8 hover:text-white'
-                }`}
-              >
-                <Icon size={14} /> {m.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Mis comidas — solo si hay alguna guardada */}
+        {customMeals.length > 0 && (
+          <section>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <p className="label">Mis comidas · 1 tap</p>
+              <span className="text-[10px] text-white/35">{customMeals.length} guardadas</span>
+            </div>
+            <SavedMealsRow onPick={pickSavedMeal} layout="row" />
+          </section>
+        )}
 
-        {mode === 'texto'   && <NaturalInput onParsed={handleParsed} />}
-        {mode === 'foto'    && <PhotoLog onParsed={handleParsed} />}
-        {mode === 'mias'    && <SavedMealsRow onPick={pickSavedMeal} layout="grid" />}
-        {mode === 'buscar'  && <FoodSearch onAdd={(it) => handleParsed([it])} />}
-        {mode === 'rapidos' && <QuickFoods onPick={(it) => handleParsed([it])} />}
+        {/* MÉTODO de registro */}
+        <section>
+          <p className="label mb-2">¿Cómo lo registras?</p>
+          <div className="grid grid-cols-3 gap-2">
+            {MODES.map((m) => {
+              const Icon = m.icon;
+              const active = m.value === mode;
+              return (
+                <button
+                  key={m.value}
+                  type="button"
+                  onClick={() => setMode(m.value)}
+                  className={`flex flex-col items-center gap-1 py-3 px-1 rounded-2xl border transition active:scale-[0.97] ${
+                    active
+                      ? 'bg-white text-ink-950 border-white shadow-card'
+                      : 'bg-white/3 border-white/5 text-white/65 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  <Icon size={18} strokeWidth={active ? 2.5 : 2} />
+                  <span className="text-[11px] font-semibold leading-tight text-center">{m.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[10px] text-white/40 text-center mt-2">{MODES.find((x) => x.value === mode)?.hint}</p>
+        </section>
 
-        <AnimatePresence>
-          {pending.length > 0 && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="card p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-xs uppercase tracking-wider text-white/40">
-                  Por añadir a {meal}{isAnotherDay && ` · ${formatHuman(targetDate)}`}
-                </p>
-                <p className="font-bold tabular-nums">{fmtNum(totalKcal)} kcal</p>
+        {/* Contenido del modo activo */}
+        <section className="animate-fade-in">
+          {mode === 'texto'   && <NaturalInput onParsed={handleParsed} />}
+          {mode === 'foto'    && <PhotoLog onParsed={handleParsed} />}
+          {mode === 'mias'    && <SavedMealsRow onPick={pickSavedMeal} layout="grid" />}
+          {mode === 'buscar'  && <FoodSearch onAdd={(it) => handleParsed([it])} />}
+          {mode === 'rapidos' && <QuickFoods onPick={(it) => handleParsed([it])} />}
+        </section>
+      </div>
+
+      {/* Pending bar — sticky en la parte inferior cuando hay items */}
+      <AnimatePresence>
+        {pending.length > 0 && (
+          <motion.div
+            initial={{ y: 100, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 100, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 360, damping: 32 }}
+            className="fixed bottom-0 inset-x-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-ink-950 via-ink-950/95 to-transparent"
+          >
+            <div className="max-w-md mx-auto card p-3 shadow-card">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-white/40">Por añadir a {meal}{isAnotherDay && ` · ${formatHuman(targetDate)}`}</p>
+                  <p className="text-base font-bold">{pending.length} ítem{pending.length === 1 ? '' : 's'} · <span className="tabular-nums">{fmtNum(totalKcal)}</span> kcal <span className="text-xs text-white/40 ml-1">· P {fmtNum(totalProtein, 0)}g</span></p>
+                </div>
               </div>
-              <ul className="space-y-1.5">
+              {/* Mini lista de items (max 3 visibles, resto contador) */}
+              <ul className="space-y-1 max-h-40 overflow-y-auto mb-2">
                 {pending.map((it, i) => (
-                  <li key={i} className="flex items-center gap-3 bg-white/3 rounded-xl px-3 py-2">
-                    {it.photo && <img src={it.photo} alt="" className="w-9 h-9 rounded-lg object-cover flex-none" />}
+                  <li key={i} className="flex items-center gap-2 bg-white/3 rounded-xl px-2.5 py-1.5">
+                    {it.photo && <img src={it.photo} alt="" className="w-7 h-7 rounded-lg object-cover flex-none" />}
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate capitalize">{it.name}</p>
-                      <p className="text-[11px] text-white/45 truncate">
-                        {it.qty} {it.unit} · P {fmtNum(it.protein, 0)} · C {fmtNum(it.carbs, 0)} · G {fmtNum(it.fat, 0)}
+                      <p className="text-xs font-medium truncate capitalize">{it.name}</p>
+                      <p className="text-[10px] text-white/40 truncate">
+                        {it.qty} {it.unit} · {fmtNum(it.kcal)} kcal
                       </p>
                     </div>
-                    <p className="text-sm font-semibold tabular-nums">{fmtNum(it.kcal)}</p>
-                    <button onClick={() => removePending(i)} className="text-white/40 hover:text-rose-300 text-xs">Quitar</button>
+                    <button onClick={() => removePending(i)} aria-label="Quitar" className="w-7 h-7 rounded-full hover:bg-white/5 flex items-center justify-center text-white/40 hover:text-rose-300 flex-none">
+                      <Trash2 size={13} />
+                    </button>
                   </li>
                 ))}
               </ul>
               <button onClick={commitAll} className="btn-lime w-full">
                 <Check size={18} /> Añadir al diario
               </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      {/* Sheet para meals con yieldGrams: porción vs gramos */}
       <SavedMealPicker
         meal={pickerMeal}
         onClose={() => setPickerMeal(null)}

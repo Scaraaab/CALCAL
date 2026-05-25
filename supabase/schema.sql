@@ -98,6 +98,51 @@ create table if not exists public.custom_meals (
 alter table public.custom_meals add column if not exists yield_grams numeric;
 create index if not exists custom_meals_user_idx on public.custom_meals (user_id);
 
+-- share_id permite emparejar la copia personal con su versión en la tabla
+-- comunitaria. Se genera al crear y nunca cambia. Si el usuario edita su
+-- ingrediente personal, NO afecta a la versión en community.
+alter table public.custom_ingredients add column if not exists share_id uuid;
+alter table public.custom_meals       add column if not exists share_id uuid;
+
+-- ============================================================
+--  Tablas comunitarias (lectura pública, escritura autenticada)
+--  Cada usuario publica una copia de sus ingredientes/comidas para que
+--  toda la comunidad pueda encontrarlos en el buscador.
+-- ============================================================
+
+create table if not exists public.community_ingredients (
+  share_id         uuid primary key,
+  created_by       uuid references auth.users on delete set null,
+  created_by_name  text,
+  name             text not null,
+  measure_type     text not null check (measure_type in ('per100g','serving','unit')),
+  base_qty         numeric,
+  serving_label    text,
+  kcal             numeric default 0,
+  protein          numeric default 0,
+  carbs            numeric default 0,
+  fat              numeric default 0,
+  fiber            numeric default 0,
+  photo            text,
+  created_at       timestamptz not null default now()
+);
+create index if not exists community_ingredients_name_trgm_idx on public.community_ingredients using gin (name gin_trgm_ops);
+-- Si la extensión pg_trgm no está disponible, ignora el índice anterior y crea uno simple:
+create index if not exists community_ingredients_name_idx on public.community_ingredients (lower(name));
+
+create table if not exists public.community_meals (
+  share_id         uuid primary key,
+  created_by       uuid references auth.users on delete set null,
+  created_by_name  text,
+  name             text not null,
+  photo            text,
+  items            jsonb not null default '[]'::jsonb,
+  totals           jsonb not null default '{}'::jsonb,
+  yield_grams      numeric,
+  created_at       timestamptz not null default now()
+);
+create index if not exists community_meals_name_idx on public.community_meals (lower(name));
+
 -- ============================================================
 --  Row Level Security
 --  Cada usuario solo ve y modifica sus propias filas.
@@ -172,3 +217,33 @@ create policy "cm_select_own" on public.custom_meals for select using (auth.uid(
 create policy "cm_insert_own" on public.custom_meals for insert with check (auth.uid() = user_id);
 create policy "cm_update_own" on public.custom_meals for update using (auth.uid() = user_id);
 create policy "cm_delete_own" on public.custom_meals for delete using (auth.uid() = user_id);
+
+-- ============================================================
+--  RLS Community: lectura pública, escritura autenticada,
+--  edición/borrado solo para el creador.
+-- ============================================================
+
+alter table public.community_ingredients enable row level security;
+alter table public.community_meals       enable row level security;
+
+-- community_ingredients
+drop policy if exists "comm_ing_read_all"    on public.community_ingredients;
+drop policy if exists "comm_ing_insert_auth" on public.community_ingredients;
+drop policy if exists "comm_ing_update_own"  on public.community_ingredients;
+drop policy if exists "comm_ing_delete_own"  on public.community_ingredients;
+create policy "comm_ing_read_all"    on public.community_ingredients for select using (true);
+create policy "comm_ing_insert_auth" on public.community_ingredients for insert
+  with check (auth.uid() is not null and (created_by is null or created_by = auth.uid()));
+create policy "comm_ing_update_own"  on public.community_ingredients for update using (created_by = auth.uid());
+create policy "comm_ing_delete_own"  on public.community_ingredients for delete using (created_by = auth.uid());
+
+-- community_meals
+drop policy if exists "comm_meal_read_all"    on public.community_meals;
+drop policy if exists "comm_meal_insert_auth" on public.community_meals;
+drop policy if exists "comm_meal_update_own"  on public.community_meals;
+drop policy if exists "comm_meal_delete_own"  on public.community_meals;
+create policy "comm_meal_read_all"    on public.community_meals for select using (true);
+create policy "comm_meal_insert_auth" on public.community_meals for insert
+  with check (auth.uid() is not null and (created_by is null or created_by = auth.uid()));
+create policy "comm_meal_update_own"  on public.community_meals for update using (created_by = auth.uid());
+create policy "comm_meal_delete_own"  on public.community_meals for delete using (created_by = auth.uid());

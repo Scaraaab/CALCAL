@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Plus, Search, Trash2, Pencil, Carrot, Camera, Sparkles, Loader2, ImageIcon, ScanLine, X } from 'lucide-react';
+import { Plus, Search, Trash2, Pencil, Carrot, Camera, Sparkles, Loader2, ImageIcon, ScanLine, X, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -11,6 +11,7 @@ import { useFoodStore } from '../store/useFoodStore';
 import { compressImage } from '../lib/image';
 import { analyzeNutritionLabel, hasApiKey } from '../lib/claude';
 import { fmtNum, sanitizeDecimal, parseDecimal } from '../utils/format';
+import IngredientDetail from '../components/food/IngredientDetail';
 
 const MEASURE_OPTIONS = [
   { value: 'per100g', label: 'Por 100 g' },
@@ -33,6 +34,11 @@ export default function Ingredients() {
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [detailId, setDetailId] = useState(null);
+  const detailIng = useMemo(
+    () => detailId ? ingredients.find((i) => i.id === detailId) : null,
+    [detailId, ingredients]
+  );
 
   const filtered = useMemo(() => {
     const query = q.trim().toLowerCase();
@@ -122,7 +128,7 @@ export default function Ingredients() {
         ) : (
           <div className="space-y-2">
             {filtered.map((ing) => (
-              <Card key={ing.id} className="p-3 flex items-center gap-3">
+              <Card key={ing.id} className="p-3 flex items-center gap-3 cursor-pointer hover:border-white/15 transition active:scale-[0.99]" as="div" onClick={() => setDetailId(ing.id)}>
                 <IngredientThumb ing={ing} size={48} />
                 <div className="flex-1 min-w-0">
                   <p className="font-semibold truncate capitalize">{ing.name}</p>
@@ -130,14 +136,7 @@ export default function Ingredients() {
                     {ing.servingLabel} · {fmtNum(ing.kcal)} kcal · P {fmtNum(ing.protein, 1)}g · C {fmtNum(ing.carbs, 1)}g · G {fmtNum(ing.fat, 1)}g
                   </p>
                 </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(ing)} className="w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center text-white/50" aria-label="Editar">
-                    <Pencil size={15} />
-                  </button>
-                  <button onClick={() => destroy(ing.id, ing.name)} className="w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center text-white/40 hover:text-rose-300" aria-label="Eliminar">
-                    <Trash2 size={15} />
-                  </button>
-                </div>
+                <ChevronRight size={16} className="text-white/30 flex-none" />
               </Card>
             ))}
           </div>
@@ -164,6 +163,23 @@ export default function Ingredients() {
       >
         <IngredientForm form={form} setForm={setForm} />
       </Sheet>
+
+      <IngredientDetail
+        ing={detailIng}
+        onClose={() => setDetailId(null)}
+        onEdit={() => {
+          if (detailIng) {
+            openEdit(detailIng);
+            setDetailId(null);
+          }
+        }}
+        onDelete={() => {
+          if (detailIng) {
+            destroy(detailIng.id, detailIng.name);
+            setDetailId(null);
+          }
+        }}
+      />
     </div>
   );
 }

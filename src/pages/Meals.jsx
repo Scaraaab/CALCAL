@@ -1,4 +1,4 @@
-import { Plus, UtensilsCrossed, Trash2, Pencil } from 'lucide-react';
+import { Plus, UtensilsCrossed, ChevronRight } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
@@ -9,12 +9,6 @@ import { fmtNum } from '../utils/format';
 export default function Meals() {
   const nav = useNavigate();
   const meals = useFoodStore((s) => s.customMeals);
-  const removeMeal = useFoodStore((s) => s.removeMeal);
-
-  function destroy(m) {
-    if (!confirm(`¿Eliminar "${m.name}"?`)) return;
-    removeMeal(m.id);
-  }
 
   return (
     <div>
@@ -39,7 +33,7 @@ export default function Meals() {
           />
         ) : (
           meals.map((m) => (
-            <Card key={m.id} className="overflow-hidden">
+            <Card key={m.id} className="overflow-hidden cursor-pointer active:scale-[0.99] hover:border-white/15 transition" onClick={() => nav(`/meals/${m.id}`)}>
               <div className="flex">
                 {m.photo ? (
                   <img src={m.photo} alt="" className="w-24 h-24 object-cover flex-none" />
@@ -62,14 +56,7 @@ export default function Meals() {
                         {m.yieldGrams > 0 && ` · rinde ${m.yieldGrams}g`}
                       </p>
                     </div>
-                    <div className="flex items-center gap-0.5">
-                      <button onClick={() => nav(`/meals/edit/${m.id}`)} className="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-white/50">
-                        <Pencil size={14} />
-                      </button>
-                      <button onClick={() => destroy(m)} className="w-8 h-8 rounded-full hover:bg-white/5 flex items-center justify-center text-white/40 hover:text-rose-300">
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                    <ChevronRight size={16} className="text-white/30 flex-none mt-0.5" />
                   </div>
                   <div className="mt-auto pt-2 flex items-baseline gap-2">
                     <p className="font-bold tabular-nums">{fmtNum(m.totals.kcal)} <span className="text-[11px] text-white/40">kcal</span></p>

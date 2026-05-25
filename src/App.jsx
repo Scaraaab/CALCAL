@@ -17,6 +17,7 @@ import Settings from './pages/Settings';
 import Ingredients from './pages/Ingredients';
 import Meals from './pages/Meals';
 import MealBuilder from './pages/MealBuilder';
+import MealDetail from './pages/MealDetail';
 import { useUserStore } from './store/useUserStore';
 import { useAuthStore, initAuthListener } from './store/useAuthStore';
 import { useFoodStore } from './store/useFoodStore';
@@ -78,6 +79,16 @@ export default function App() {
               ingredients: data.ingredients,
               meals:       data.meals
             });
+            // Sincronización con base de datos comunitaria (fire-and-forget).
+            // Sube los ingredientes/comidas locales que aún no estén en community.
+            // El nombre del usuario sale del profile o del auth metadata.
+            const userName = data.profile?.name
+              || auth.user?.name
+              || auth.user?.email?.split('@')[0]
+              || 'Anónimo';
+            useFoodStore.getState().syncToCommunity(userName).catch((err) => {
+              console.warn('[CalCal:auth] syncToCommunity falló (no bloqueante)', err);
+            });
           } else {
             console.warn('[CalCal:auth] hydrateAll() devolvió null (Supabase no configurado)');
           }
@@ -132,6 +143,7 @@ export default function App() {
           <Route path="/meals" element={<Meals />} />
           <Route path="/meals/new" element={<MealBuilder />} />
           <Route path="/meals/edit/:id" element={<MealBuilder />} />
+          <Route path="/meals/:id" element={<MealDetail />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

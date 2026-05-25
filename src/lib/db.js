@@ -267,6 +267,7 @@ function rowToIngredient(r) {
     fat: Number(r.fat) || 0,
     fiber: Number(r.fiber) || 0,
     photo: r.photo || null,
+    shareId: r.share_id || null,
     createdAt: new Date(r.created_at).getTime()
   };
 }
@@ -284,7 +285,8 @@ function ingredientToRow(userId, i) {
     carbs: i.carbs,
     fat: i.fat,
     fiber: i.fiber,
-    photo: i.photo || null
+    photo: i.photo || null,
+    share_id: i.shareId || null
   };
 }
 
@@ -357,6 +359,7 @@ function rowToMeal(r) {
     totals: r.totals || { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
     yieldGrams: r.yield_grams != null ? Number(r.yield_grams) : null,
     useCount: Number(r.use_count) || 0,
+    shareId: r.share_id || null,
     createdAt: new Date(r.created_at).getTime()
   };
 }
@@ -370,7 +373,8 @@ function mealToRow(userId, m) {
     items: m.items || [],
     totals: m.totals || {},
     yield_grams: m.yieldGrams != null ? Number(m.yieldGrams) : null,
-    use_count: m.useCount || 0
+    use_count: m.useCount || 0,
+    share_id: m.shareId || null
   };
 }
 
@@ -401,6 +405,278 @@ export async function removeMeal(id) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from('custom_meals').delete().eq('id', id);
   if (error) warn('removeMeal', error);
+}
+
+// ============================================================
+//  COMMUNITY — base de datos compartida por toda la comunidad
+// ============================================================
+
+function rowToCommunityIngredient(r) {
+  return {
+    shareId: r.share_id,
+    createdBy: r.created_by,
+    createdByName: r.created_by_name || 'Anónimo',
+    name: r.name,
+    measureType: r.measure_type,
+    baseQty: Number(r.base_qty) || (r.measure_type === 'per100g' ? 100 : 1),
+    servingLabel: r.serving_label || '',
+    kcal: Number(r.kcal) || 0,
+    protein: Number(r.protein) || 0,
+    carbs: Number(r.carbs) || 0,
+    fat: Number(r.fat) || 0,
+    fiber: Number(r.fiber) || 0,
+    photo: r.photo || null,
+    isCommunity: true
+  };
+}
+
+function communityIngredientToRow(ing, userId, userName) {
+  return {
+    share_id: ing.shareId,
+    created_by: userId,
+    created_by_name: userName || 'Anónimo',
+    name: ing.name,
+    measure_type: ing.measureType,
+    base_qty: ing.baseQty,
+    serving_label: ing.servingLabel,
+    kcal: ing.kcal,
+    protein: ing.protein,
+    carbs: ing.carbs,
+    fat: ing.fat,
+    fiber: ing.fiber,
+    photo: ing.photo || null
+  };
+}
+
+function rowToCommunityMeal(r) {
+  return {
+    shareId: r.share_id,
+    createdBy: r.created_by,
+    createdByName: r.created_by_name || 'Anónimo',
+    name: r.name,
+    photo: r.photo || null,
+    items: Array.isArray(r.items) ? r.items : [],
+    totals: r.totals || { kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0 },
+    yieldGrams: r.yield_grams != null ? Number(r.yield_grams) : null,
+    isCommunity: true
+  };
+}
+
+function communityMealToRow(m, userId, userName) {
+  return {
+    share_id: m.shareId,
+    created_by: userId,
+    created_by_name: userName || 'Anónimo',
+    name: m.name,
+    photo: m.photo || null,
+    items: m.items || [],
+    totals: m.totals || {},
+    yield_grams: m.yieldGrams != null ? Number(m.yieldGrams) : null
+  };
+}
+
+/**
+ * Búsqueda async por nombre en la tabla comunitaria.
+ * Usa ILIKE — case-insensitive, sustring match.
+ * @param {string} query - texto a buscar (mínimo 2 chars para no hacer scan masivo)
+ * @param {number} limit
+ */
+export async function fetchCommunityIngredients(query, limit = 12) {
+  if (!isSupabaseConfigured) return [];
+  const q = (query || '').trim();
+  if (q.length < 2) return [];
+  const { data, error } = await supabase
+    .from('community_ingredients')
+    .select('*')
+    .ilike('name', `%${escapeLike(q)}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) { warn('fetchCommunityIngredients', error); return []; }
+  return (data || []).map(rowToCommunityIngredient);
+}
+
+export async function fetchCommunityMeals(query, limit = 12) {
+  if (!isSupabaseConfigured) return [];
+  const q = (query || '').trim();
+  if (q.length < 2) return [];
+  const { data, error } = await supabase
+    .from('community_meals')
+    .select('*')
+    .ilike('name', `%${escapeLike(q)}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) { warn('fetchCommunityMeals', error); return []; }
+  return (data || []).map(rowToCommunityMeal);
+}
+
+/**
+ * Publica un ingrediente a community. ignoreDuplicates → no sobreescribe
+ * si ya existe (otro usuario ya lo había publicado con el mismo share_id).
+ */
+export async function pushCommunityIngredient(ing, userName) {
+  if (!isSupabaseConfigured || !ing?.shareId) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const { error } = await supabase
+    .from('community_ingredients')
+    .upsert(communityIngredientToRow(ing, userId, userName), {
+      onConflict: 'share_id',
+      ignoreDuplicates: true
+    });
+  if (error) warn('pushCommunityIngredient', error);
+}
+
+export async function pushCommunityMeal(meal, userName) {
+  if (!isSupabaseConfigured || !meal?.shareId) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const { error } = await supabase
+    .from('community_meals')
+    .upsert(communityMealToRow(meal, userId, userName), {
+      onConflict: 'share_id',
+      ignoreDuplicates: true
+    });
+  if (error) warn('pushCommunityMeal', error);
+}
+
+/**
+ * Versión batch — más eficiente para sync inicial.
+ */
+export async function pushCommunityIngredientsBatch(ingredients, userName) {
+  if (!isSupabaseConfigured || !ingredients?.length) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const rows = ingredients.filter((i) => i.shareId).map((i) => communityIngredientToRow(i, userId, userName));
+  if (!rows.length) return;
+  const { error } = await supabase
+    .from('community_ingredients')
+    .upsert(rows, { onConflict: 'share_id', ignoreDuplicates: true });
+  if (error) warn('pushCommunityIngredientsBatch', error);
+}
+
+export async function pushCommunityMealsBatch(meals, userName) {
+  if (!isSupabaseConfigured || !meals?.length) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const rows = meals.filter((m) => m.shareId).map((m) => communityMealToRow(m, userId, userName));
+  if (!rows.length) return;
+  const { error } = await supabase
+    .from('community_meals')
+    .upsert(rows, { onConflict: 'share_id', ignoreDuplicates: true });
+  if (error) warn('pushCommunityMealsBatch', error);
+}
+
+/**
+ * Actualiza una fila comunitaria. RLS solo permite al creador original.
+ * Si el user no es el creador, el update no afecta filas (no-op silencioso).
+ */
+export async function updateCommunityIngredient(ing) {
+  if (!isSupabaseConfigured || !ing?.shareId) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const { error } = await supabase
+    .from('community_ingredients')
+    .update({
+      name: ing.name,
+      measure_type: ing.measureType,
+      base_qty: ing.baseQty,
+      serving_label: ing.servingLabel,
+      kcal: ing.kcal,
+      protein: ing.protein,
+      carbs: ing.carbs,
+      fat: ing.fat,
+      fiber: ing.fiber,
+      photo: ing.photo || null
+    })
+    .eq('share_id', ing.shareId);
+  if (error) warn('updateCommunityIngredient', error);
+}
+
+export async function updateCommunityMeal(meal) {
+  if (!isSupabaseConfigured || !meal?.shareId) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const { error } = await supabase
+    .from('community_meals')
+    .update({
+      name: meal.name,
+      photo: meal.photo || null,
+      items: meal.items || [],
+      totals: meal.totals || {},
+      yield_grams: meal.yieldGrams != null ? Number(meal.yieldGrams) : null
+    })
+    .eq('share_id', meal.shareId);
+  if (error) warn('updateCommunityMeal', error);
+}
+
+/** Borra de community. RLS solo permite al creador. */
+export async function removeCommunityIngredient(shareId) {
+  if (!isSupabaseConfigured || !shareId) return;
+  const { error } = await supabase.from('community_ingredients').delete().eq('share_id', shareId);
+  if (error) warn('removeCommunityIngredient', error);
+}
+
+export async function removeCommunityMeal(shareId) {
+  if (!isSupabaseConfigured || !shareId) return;
+  const { error } = await supabase.from('community_meals').delete().eq('share_id', shareId);
+  if (error) warn('removeCommunityMeal', error);
+}
+
+/**
+ * Devuelve info mínima de la fila comunitaria (para saber si el user es creador).
+ * @returns {Promise<{share_id, created_by, created_by_name}|null>}
+ */
+export async function fetchCommunityIngredientByShareId(shareId) {
+  if (!isSupabaseConfigured || !shareId) return null;
+  const { data, error } = await supabase
+    .from('community_ingredients')
+    .select('share_id, created_by, created_by_name, created_at')
+    .eq('share_id', shareId)
+    .maybeSingle();
+  if (error) { warn('fetchCommunityIngredientByShareId', error); return null; }
+  return data;
+}
+
+export async function fetchCommunityMealByShareId(shareId) {
+  if (!isSupabaseConfigured || !shareId) return null;
+  const { data, error } = await supabase
+    .from('community_meals')
+    .select('share_id, created_by, created_by_name, created_at')
+    .eq('share_id', shareId)
+    .maybeSingle();
+  if (error) { warn('fetchCommunityMealByShareId', error); return null; }
+  return data;
+}
+
+/**
+ * Versión batch para upsert de los personales (cuando hay que escribir share_ids
+ * recién generados de golpe en muchos registros).
+ */
+export async function upsertIngredientsBatch(ingredients) {
+  if (!isSupabaseConfigured || !ingredients?.length) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const rows = ingredients.map((i) => ingredientToRow(userId, i));
+  const { error } = await supabase
+    .from('custom_ingredients')
+    .upsert(rows, { onConflict: 'id' });
+  if (error) warn('upsertIngredientsBatch', error);
+}
+
+export async function upsertMealsBatch(meals) {
+  if (!isSupabaseConfigured || !meals?.length) return;
+  const userId = await currentUserId();
+  if (!userId) return;
+  const rows = meals.map((m) => mealToRow(userId, m));
+  const { error } = await supabase
+    .from('custom_meals')
+    .upsert(rows, { onConflict: 'id' });
+  if (error) warn('upsertMealsBatch', error);
+}
+
+/** Escapa caracteres especiales del patrón LIKE/ILIKE. */
+function escapeLike(s) {
+  return s.replace(/[\\%_]/g, (m) => '\\' + m);
 }
 
 // ============================================================
