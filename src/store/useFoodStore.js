@@ -366,22 +366,51 @@ export const useFoodStore = create(
       },
 
       /**
-       * Sincroniza ingredientes y comidas personales con la base de datos
-       * comunitaria. Llamar después de hydrate, tras cada login.
+       * Migra los ingredientes y comidas personales a la base de datos comunitaria.
        *
-       * Para cada ítem sin shareId, genera uno y actualiza la copia personal
-       * (local + Supabase). Después hace upsert batch a community con
-       * ignoreDuplicates (no sobreescribe si otro usuario ya lo publicó con
-       * ese share_id — caso prácticamente imposible porque UUIDs son únicos).
+       * Diseño:
+       *  - SE EJECUTA UNA SOLA VEZ POR USUARIO en toda la vida de la app.
+       *  - Marca de finalización en localStorage por userId: si el flag existe,
+       *    short-circuit total (no toca Supabase ni siquiera para verificar).
+       *  - Para los ítems que no tienen shareId: genera uno, lo guarda en local
+       *    y en la copia personal de Supabase.
+       *  - Para todos los ítems con shareId: upsert batch en community con
+       *    ignoreDuplicates (los que ya existen no se tocan; los que faltan se
+       *    insertan).
+       *  - Tras la migración, los nuevos ingredientes/comidas se publican en
+       *    tiempo real desde addIngredient/addMeal. Las ediciones se propagan
+       *    desde updateIngredient/updateMeal. Esta función ya no hace falta.
+       *
+       * Idempotente y silencioso (solo loggea, nunca lanza al caller).
        */
-      syncToCommunity: async (userName) => {
-        const state = get();
-        // Guardamos el nombre para futuras publicaciones (las que vienen de
-        // addIngredient/addMeal después del sync inicial).
+      syncToCommunity: async (userName, userId) => {
+        // Guardamos el nombre para futuras publicaciones (addIngredient/addMeal).
         set({ _communityUserName: userName || '' });
 
+        if (!userId) {
+          log('syncToCommunity → SKIP: sin userId');
+          return;
+        }
+
+        // Flag persistente por usuario. Si ya migramos antes, salta.
+        const flagKey = `calcal:community_migrated:${userId}`;
+        if (typeof localStorage !== 'undefined' && localStorage.getItem(flagKey)) {
+          log(`syncToCommunity → SKIP: ya migrado (${userId.slice(0, 8)}…)`);
+          return;
+        }
+
+        const state = get();
         const personalIngs = state.customIngredients;
         const personalMeals = state.customMeals;
+
+        if (personalIngs.length === 0 && personalMeals.length === 0) {
+          log('syncToCommunity → SKIP: usuario sin items personales');
+          // Aun así marcamos el flag para no volver a comprobar
+          if (typeof localStorage !== 'undefined') localStorage.setItem(flagKey, String(Date.now()));
+          return;
+        }
+
+        log(`syncToCommunity → INICIANDO migración: ${personalIngs.length} ingr, ${personalMeals.length} comidas`);
 
         // 1. Genera shareId para los que no tienen
         const ingFixes = [];
@@ -414,15 +443,18 @@ export const useFoodStore = create(
           }));
         }
 
-        // 3. Persiste los shareIds en personal (Supabase) + publica en community
+        // 3. Persiste shareIds en personal + publica en community.
+        // Si algo falla NO marcamos el flag → reintenta al siguiente login.
         try {
           if (ingFixes.length) await db.upsertIngredientsBatch(ingsWithIds);
           if (mealFixes.length) await db.upsertMealsBatch(mealsWithIds);
           await db.pushCommunityIngredientsBatch(ingsWithIds, userName);
           await db.pushCommunityMealsBatch(mealsWithIds, userName);
-          log(`syncToCommunity → OK (${ingsWithIds.length} ingr, ${mealsWithIds.length} comidas)`);
+
+          if (typeof localStorage !== 'undefined') localStorage.setItem(flagKey, String(Date.now()));
+          log(`syncToCommunity → ✅ OK (${ingsWithIds.length} ingr, ${mealsWithIds.length} comidas). Flag persistido.`);
         } catch (err) {
-          logErr('syncToCommunity error', err);
+          logErr('syncToCommunity → ❌ error (reintentará en próximo login)', err);
         }
       },
 

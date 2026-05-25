@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { Heart, Trash2, Utensils, Coffee, Soup, Cookie } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useFoodStore } from '../../store/useFoodStore';
 import { fmtNum } from '../../utils/format';
+import EntryDetail from './EntryDetail';
 
 const MEAL_ICONS = {
   Desayuno: Coffee,
@@ -16,6 +18,9 @@ export default function MealList({ entries = [], date, readOnly = false }) {
   const favorites = useFoodStore((s) => s.favorites);
   const isFavorite = (name) => favorites.some((f) => f.name?.toLowerCase() === (name || '').toLowerCase());
 
+  // Entry seleccionada para mostrar en el detail sheet
+  const [detailEntry, setDetailEntry] = useState(null);
+
   if (!entries.length) return null;
 
   // Agrupa por meal
@@ -28,67 +33,74 @@ export default function MealList({ entries = [], date, readOnly = false }) {
   const order = ['Desayuno', 'Almuerzo', 'Merienda', 'Cena', 'Otros'];
 
   return (
-    <div className="space-y-4">
-      {order.filter((k) => groups[k]?.length).map((meal) => {
-        const Icon = MEAL_ICONS[meal] || Utensils;
-        const items = groups[meal];
-        const total = items.reduce((s, x) => s + (x.kcal || 0), 0);
-        return (
-          <div key={meal}>
-            <div className="flex items-center justify-between px-1 mb-2">
-              <div className="flex items-center gap-2">
-                <Icon size={16} className="text-white/40" />
-                <p className="text-xs uppercase tracking-wider font-semibold text-white/50">{meal}</p>
+    <>
+      <div className="space-y-4">
+        {order.filter((k) => groups[k]?.length).map((meal) => {
+          const Icon = MEAL_ICONS[meal] || Utensils;
+          const items = groups[meal];
+          const total = items.reduce((s, x) => s + (x.kcal || 0), 0);
+          return (
+            <div key={meal}>
+              <div className="flex items-center justify-between px-1 mb-2">
+                <div className="flex items-center gap-2">
+                  <Icon size={16} className="text-white/40" />
+                  <p className="text-xs uppercase tracking-wider font-semibold text-white/50">{meal}</p>
+                </div>
+                <p className="text-xs text-white/40 tabular-nums">{fmtNum(total)} kcal</p>
               </div>
-              <p className="text-xs text-white/40 tabular-nums">{fmtNum(total)} kcal</p>
-            </div>
-            <div className="card divide-y divide-white/5 overflow-hidden">
-              <AnimatePresence initial={false}>
-                {items.map((e) => (
-                  <motion.div
-                    key={e.id}
-                    layout
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    exit={{ opacity: 0, height: 0 }}
-                    transition={{ duration: 0.2 }}
-                    className="px-4 py-3 flex items-center gap-3"
-                  >
-                    {e.photo && (
-                      <img src={e.photo} alt="" className="w-10 h-10 rounded-xl object-cover flex-none" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium truncate capitalize">{e.name}</p>
-                      <p className="text-xs text-white/45 truncate">
-                        {e.qty ? `${e.qty} ${e.unit || ''} · ` : ''}
-                        {fmtNum(e.kcal)} kcal · P {fmtNum(e.protein, 0)}g · C {fmtNum(e.carbs, 0)}g · G {fmtNum(e.fat, 0)}g
-                      </p>
-                    </div>
-                    {!readOnly && (
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => toggleFavorite(e)}
-                          className="w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center"
-                          aria-label="Favorito"
-                        >
-                          <Heart size={16} className={isFavorite(e.name) ? 'fill-rose-400 text-rose-400' : 'text-white/40'} />
-                        </button>
-                        <button
-                          onClick={() => removeEntry(e.id, date)}
-                          className="w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center"
-                          aria-label="Eliminar"
-                        >
-                          <Trash2 size={16} className="text-white/40" />
-                        </button>
+              <div className="card divide-y divide-white/5 overflow-hidden">
+                <AnimatePresence initial={false}>
+                  {items.map((e) => (
+                    <motion.div
+                      key={e.id}
+                      layout
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      transition={{ duration: 0.2 }}
+                      onClick={() => setDetailEntry(e)}
+                      className="px-4 py-3 flex items-center gap-3 cursor-pointer active:bg-white/5 transition"
+                    >
+                      {e.photo && (
+                        <img src={e.photo} alt="" className="w-10 h-10 rounded-xl object-cover flex-none" />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium truncate capitalize">{e.name}</p>
+                        <p className="text-xs text-white/45 truncate">
+                          {e.qty ? `${e.qty} ${e.unit || ''} · ` : ''}
+                          {fmtNum(e.kcal)} kcal · P {fmtNum(e.protein, 0)}g · C {fmtNum(e.carbs, 0)}g · G {fmtNum(e.fat, 0)}g
+                        </p>
                       </div>
-                    )}
-                  </motion.div>
-                ))}
-              </AnimatePresence>
+                      {!readOnly && (
+                        <div className="flex items-center gap-1" onClick={(ev) => ev.stopPropagation()}>
+                          <button
+                            type="button"
+                            onClick={(ev) => { ev.stopPropagation(); toggleFavorite(e); }}
+                            className="w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center"
+                            aria-label="Favorito"
+                          >
+                            <Heart size={16} className={isFavorite(e.name) ? 'fill-rose-400 text-rose-400' : 'text-white/40'} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(ev) => { ev.stopPropagation(); removeEntry(e.id, date); }}
+                            className="w-9 h-9 rounded-full hover:bg-white/5 flex items-center justify-center"
+                            aria-label="Eliminar"
+                          >
+                            <Trash2 size={16} className="text-white/40" />
+                          </button>
+                        </div>
+                      )}
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
             </div>
-          </div>
-        );
-      })}
-    </div>
+          );
+        })}
+      </div>
+
+      <EntryDetail entry={detailEntry} onClose={() => setDetailEntry(null)} />
+    </>
   );
 }

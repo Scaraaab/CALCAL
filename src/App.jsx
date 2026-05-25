@@ -79,14 +79,14 @@ export default function App() {
               ingredients: data.ingredients,
               meals:       data.meals
             });
-            // Sincronización con base de datos comunitaria (fire-and-forget).
-            // Sube los ingredientes/comidas locales que aún no estén en community.
-            // El nombre del usuario sale del profile o del auth metadata.
+            // Migración one-time a la base de datos comunitaria (fire-and-forget).
+            // Solo corre una vez por userId en la vida de la app. Después de migrar,
+            // los nuevos items se publican en tiempo real desde addIngredient/addMeal.
             const userName = data.profile?.name
               || auth.user?.name
               || auth.user?.email?.split('@')[0]
               || 'Anónimo';
-            useFoodStore.getState().syncToCommunity(userName).catch((err) => {
+            useFoodStore.getState().syncToCommunity(userName, userId).catch((err) => {
               console.warn('[CalCal:auth] syncToCommunity falló (no bloqueante)', err);
             });
           } else {
