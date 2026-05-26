@@ -438,26 +438,34 @@ export const useFoodStore = create(
     {
       name: 'calcal:food',
       storage: createJSONStorage(() => localStorage),
-      // partialize: qué guardar en localStorage. Las fotos base64 en entries
-      // pesan ~80KB cada una y saturan la cuota de 5MB rápido. Como las fotos
-      // viven en Supabase (food_entries.photo) y se rehidratan al cargar, NO
-      // las persistimos localmente. El cache local funciona igual y no se
-      // satura.
+      // partialize: qué guardar en localStorage.
+      // CRÍTICO: localStorage tiene un cap fijo de ~5MB por origen (no el bucket
+      // total de 39GB que reporta navigator.storage). Las fotos base64 son
+      // grandes (~80KB cada una) y se acumulan rápido.
+      //
+      // Strategy: NO persistir fotos en NINGÚN slice. Las fotos viven en
+      // Supabase (food_entries.photo, custom_ingredients.photo, custom_meals.photo
+      // y custom_meals.items[].photo via JSONB). Al cargar la app, hydrateAll
+      // las trae de vuelta. localStorage queda pequeño (~50KB típico).
+      //
+      // Trade-off: durante ~100ms al iniciar la app (antes de que hydrateAll
+      // complete), las fotos no se ven. Los componentes tienen fallback a
+      // gradient/icono así que no hay UI rota.
       partialize: (state) => {
+        const stripEntryPhotos = (items) => items.map(({ photo, ...rest }) => rest);
         const slimEntries = {};
         for (const [date, items] of Object.entries(state.entries || {})) {
-          slimEntries[date] = items.map((it) => {
-            if (!it.photo) return it;
-            const { photo, ...rest } = it;
-            return rest;
-          });
+          slimEntries[date] = stripEntryPhotos(items);
         }
         return {
           ...state,
-          entries: slimEntries
-          // customIngredients y customMeals SÍ persisten con fotos
-          // (dataset pequeño, ~50 items max). Si un día crecen, podemos
-          // strip aquí también.
+          entries: slimEntries,
+          customIngredients: (state.customIngredients || []).map(({ photo, ...rest }) => rest),
+          customMeals: (state.customMeals || []).map((m) => ({
+            ...m,
+            photo: null, // strip foto del meal
+            items: (m.items || []).map(({ photo, ...rest }) => rest) // strip de cada ingrediente dentro
+          }))
         };
       }
     }

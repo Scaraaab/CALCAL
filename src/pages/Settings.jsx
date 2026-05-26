@@ -143,12 +143,21 @@ export default function Settings() {
                 label="Escritura food_entries"
                 detail={diag.foodEntriesWriteOk ? 'OK' : (diag.foodEntriesWriteError || 'no probada')}
               />
-              {diag.storageUsedMB != null && (
-                <DiagRow
-                  ok={!diag.storageNearLimit}
-                  label="Storage local"
-                  detail={`${diag.storageUsedMB}MB usados de ${diag.storageQuotaMB}MB`}
-                />
+              {diag.localStorageMB != null && (
+                <>
+                  <DiagRow
+                    ok={!diag.localStorageNearLimit}
+                    label="localStorage real"
+                    detail={`${diag.localStorageMB}MB de ~5MB (cache caches calcal:food: ${diag.foodCacheMB}MB)`}
+                  />
+                  {diag.bucketUsedMB != null && (
+                    <DiagRow
+                      ok={true}
+                      label="Bucket total (informativo)"
+                      detail={`${diag.bucketUsedMB}MB de ${diag.bucketQuotaMB}MB — incluye IndexedDB, Cache API, etc.`}
+                    />
+                  )}
+                </>
               )}
               {!supabaseConfig.hasUrl && (
                 <p className="text-amber-300 text-[11px] mt-2">
@@ -171,9 +180,10 @@ export default function Settings() {
                   ⚠ Auth OK pero la escritura falla. Probable: RLS rota o schema incompleto. Re-ejecuta supabase/schema.sql.
                 </p>
               )}
-              {diag.storageNearLimit && (
+              {diag.localStorageNearLimit && (
                 <p className="text-amber-300 text-[11px] mt-2">
-                  ⚠ localStorage al {Math.round(100 * diag.storageUsedMB / diag.storageQuotaMB)}% — puede causar pérdida de datos. Las fotos grandes en comidas/ingredientes son la causa más común.
+                  ⚠ localStorage al {Math.round(100 * diag.localStorageMB / 5)}% de su cap (~5MB). Cuando se llene, los writes pueden fallar con "quota exceeded".
+                  Pulsa "Liberar espacio" abajo o el botón se purgará automáticamente la próxima vez que falle.
                 </p>
               )}
             </div>

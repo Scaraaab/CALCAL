@@ -836,13 +836,31 @@ export async function runDiagnostic() {
     }
   }
 
-  // 4) localStorage quota (estimate)
+  // 4) localStorage size REAL (no el bucket total — ese reporta IndexedDB+Cache+etc).
+  //    localStorage tiene un cap fijo de ~5MB por origen aunque el bucket sea de 39GB.
+  if (typeof localStorage !== 'undefined') {
+    let bytes = 0;
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      const v = localStorage.getItem(k) || '';
+      // UTF-16: cada char = 2 bytes
+      bytes += (k.length + v.length) * 2;
+    }
+    result.localStorageBytes = bytes;
+    result.localStorageMB    = Math.round(bytes / 1024 / 1024 * 100) / 100;
+    // Detalle: tamaño de la key principal (calcal:food)
+    const foodRaw = localStorage.getItem('calcal:food') || '';
+    result.foodCacheMB = Math.round((foodRaw.length * 2) / 1024 / 1024 * 100) / 100;
+    // Browsers típicamente dan 5MB de localStorage. >4MB = riesgo
+    result.localStorageNearLimit = bytes > 4 * 1024 * 1024;
+  }
+
+  // 5) Bucket total (solo informativo — NO usar como límite de localStorage)
   if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
     try {
       const est = await navigator.storage.estimate();
-      result.storageUsedMB  = Math.round((est.usage  || 0) / 1024 / 1024 * 10) / 10;
-      result.storageQuotaMB = Math.round((est.quota  || 0) / 1024 / 1024);
-      result.storageNearLimit = est.usage / est.quota > 0.85;
+      result.bucketUsedMB  = Math.round((est.usage  || 0) / 1024 / 1024 * 10) / 10;
+      result.bucketQuotaMB = Math.round((est.quota  || 0) / 1024 / 1024);
     } catch { /* noop */ }
   }
 
