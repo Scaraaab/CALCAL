@@ -42,6 +42,14 @@ function reportWriteError(operation, error) {
     toast.error('Sesión expirada o no autenticado. Cierra sesión y vuelve a entrar.', 9000);
   } else if (/Failed to fetch/i.test(msg) || /NetworkError/i.test(msg)) {
     toast.error(`Sin conexión a Supabase. Revisa tu red.\n(${operation})`);
+  } else if (/FetchEvent\.respondWith/i.test(msg) || /no-response/i.test(msg)) {
+    // SW viejo cacheado (pre-fix) interceptando POSTs. Pasa solo a usuarios
+    // que abrieron la app antes del fix de vite.config.js que quitó las
+    // reglas NetworkOnly para Supabase. Solución para el user: forzar update.
+    toast.error(
+      'Service Worker desactualizado. Ve a Ajustes → Reiniciar Service Worker, o cierra la pestaña y vuelve a abrirla.',
+      12000
+    );
   } else {
     toast.error(`Error al guardar (${operation}): ${msg.slice(0, 80)}`, 8000);
   }

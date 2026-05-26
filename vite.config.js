@@ -76,17 +76,24 @@ export default defineConfig({
         ],
 
         runtimeCaching: [
-          // Supabase: jamás cachear (auth + datos en vivo + RLS).
-          // Métodos explícitos porque por defecto Workbox solo gestiona GET.
-          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'GET' },
-          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'POST' },
-          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'PATCH' },
-          { urlPattern: /^https:\/\/[a-z0-9-]+\.supabase\.(co|in)\/.*/i, handler: 'NetworkOnly', method: 'DELETE' },
-
-          // Gemini: jamás cachear.
-          { urlPattern: /^https:\/\/generativelanguage\.googleapis\.com\/.*/i, handler: 'NetworkOnly' }
-
-          // No hay regla genérica para same-origin a propósito:
+          // INTENCIONALMENTE VACÍO.
+          //
+          // ANTES había reglas NetworkOnly para Supabase y Gemini, pero causaban
+          // un bug en iOS Safari + PWA standalone: workbox intercepta el fetch
+          // y re-emite la request internamente; con POSTs que llevan body (upsert
+          // de Supabase) iOS a veces no puede re-stream el body → el handler
+          // resuelve a undefined → el navegador reporta:
+          //   "FetchEvent.respondWith received an error: no-response: no-response"
+          //
+          // Workbox solo intercepta requests que matcheen una regla. Sin reglas
+          // para esas URLs (que además son cross-origin), el SW las ignora y
+          // las requests van directo al navegador como si no hubiera SW. Es
+          // exactamente lo que queremos: NetworkOnly de facto, sin handler.
+          //
+          // Mantenimiento:
+          //  - No añadir reglas NetworkOnly aquí para Supabase/Gemini. Si en el
+          //    futuro hace falta cachear algo, usa un urlPattern más restrictivo
+          //    que NO matchee POSTs/PATCHs con body.
           //  - Los assets estáticos (JS/CSS con hash) están en el precache.
           //  - Las navegaciones (URLs sin extensión, p.ej. /history?date=...) van
           //    al navigateFallback → sirve index.html → React Router enruta.

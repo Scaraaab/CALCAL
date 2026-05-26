@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Trash2, Download, ShoppingCart, Target, Droplet, Save, Eye, EyeOff, Activity, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Sparkles, Trash2, Download, ShoppingCart, Target, Droplet, Save, Eye, EyeOff, Activity, CheckCircle2, XCircle, Loader2, RefreshCw } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -119,6 +119,29 @@ export default function Settings() {
               }}
             >
               <Trash2 size={16} /> Liberar espacio (cache local)
+            </Button>
+            <Button
+              variant="ghost"
+              fullWidth
+              onClick={async () => {
+                if (!confirm('Reinicia el Service Worker. Útil si los guardados fallan con "no-response" o errores de SW. Tus datos no se tocan.')) return;
+                try {
+                  if ('serviceWorker' in navigator) {
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    await Promise.all(regs.map((r) => r.unregister()));
+                  }
+                  if ('caches' in window) {
+                    const keys = await caches.keys();
+                    await Promise.all(keys.map((k) => caches.delete(k)));
+                  }
+                  toast.success('Service Worker reiniciado. Recargando…');
+                  setTimeout(() => location.reload(), 800);
+                } catch (e) {
+                  toast.error('No se pudo reiniciar: ' + e.message);
+                }
+              }}
+            >
+              <RefreshCw size={16} /> Reiniciar Service Worker
             </Button>
           </div>
 
