@@ -290,15 +290,17 @@ function IngredientPicker({ open, onClose, onPick, currentMealId }) {
           {[
             { v: 'busqueda', l: 'Buscar' },
             { v: 'mios',     l: 'Míos' },
-            ...(recipes.length > 0 ? [{ v: 'recetas', l: 'Recetas' }] : []),
+            { v: 'recetas',  l: 'Recetas' }, // siempre visible (empty state si no hay)
             { v: 'manual',   l: 'Manual' }
           ].map((t) => (
             <button
               key={t.v}
+              type="button"
               onClick={() => { setTab(t.v); setActive(null); }}
-              className={`flex-1 py-2 rounded-xl text-xs font-medium transition ${
+              className={`flex-1 py-2 rounded-xl text-xs font-medium transition touch-manipulation ${
                 tab === t.v ? 'bg-white text-ink-950' : 'text-white/60'
               }`}
+              style={{ touchAction: 'manipulation' }}
             >
               {t.l}
             </button>
@@ -456,8 +458,10 @@ function QtyEditor({ food, qtyStr, setQtyStr, onCancel, onConfirm }) {
       </div>
       <div className="flex items-center justify-between bg-ink-700/60 rounded-2xl p-2">
         <button
+          type="button"
           onClick={() => setQtyStr(String(Math.max(step, +(qtyNum - step).toFixed(2))))}
-          className="w-10 h-10 rounded-xl bg-white/5"
+          className="w-11 h-11 rounded-xl bg-white/5 touch-manipulation"
+          style={{ touchAction: 'manipulation' }}
         >−</button>
         <input
           type="text"
@@ -466,12 +470,15 @@ function QtyEditor({ food, qtyStr, setQtyStr, onCancel, onConfirm }) {
           value={qtyStr}
           onChange={(e) => setQtyStr(sanitizeDecimal(e.target.value))}
           placeholder="0"
-          className="bg-transparent text-center font-bold text-xl w-24 outline-none"
+          className="bg-transparent text-center font-bold text-xl w-24 outline-none touch-manipulation"
+          style={{ touchAction: 'manipulation' }}
         />
-        <span className="text-xs text-white/40 px-2">{food.unit}</span>
+        <span className="text-xs text-white/40 px-2 pointer-events-none">{food.unit}</span>
         <button
+          type="button"
           onClick={() => setQtyStr(String(+((qtyNum || 0) + step).toFixed(2)))}
-          className="w-10 h-10 rounded-xl bg-white/5"
+          className="w-11 h-11 rounded-xl bg-white/5 touch-manipulation"
+          style={{ touchAction: 'manipulation' }}
         >+</button>
       </div>
       <div className="grid grid-cols-4 gap-2 text-center">

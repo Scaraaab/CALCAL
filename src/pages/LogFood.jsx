@@ -63,34 +63,19 @@ export default function LogFood() {
     setPending((p) => p.filter((_, i) => i !== idx));
   }
 
+  /**
+   * Selección de comida guardada — SIEMPRE abre el picker.
+   * UX unificada con el resto de modos: tap → picker → confirmar → al pending.
+   * El user puede seguir añadiendo y al final pulsar "Añadir al diario".
+   */
   function pickSavedMeal(savedMeal) {
-    if (savedMeal.yieldGrams > 0) {
-      setPickerMeal(savedMeal);
-      return;
-    }
-    addEntries([{
-      name: savedMeal.name,
-      qty: 1,
-      unit: 'comida',
-      kcal: savedMeal.totals.kcal,
-      protein: savedMeal.totals.protein,
-      carbs: savedMeal.totals.carbs,
-      fat: savedMeal.totals.fat,
-      fiber: savedMeal.totals.fiber,
-      photo: savedMeal.photo || undefined,
-      source: 'meal',
-      mealId: savedMeal.id,
-      meal
-    }], targetDate);
-    bumpMealUseCount(savedMeal.id);
-    nav(backDestination());
+    setPickerMeal(savedMeal);
   }
 
   function confirmFromPicker(entry) {
-    addEntries([{ ...entry, meal }], targetDate);
+    handleParsed([entry]);
     if (pickerMeal) bumpMealUseCount(pickerMeal.id);
     setPickerMeal(null);
-    nav(backDestination());
   }
 
   const totalKcal = pending.reduce((s, x) => s + (x.kcal || 0), 0);
