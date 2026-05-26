@@ -437,10 +437,55 @@ export const useFoodStore = create(
     }),
     {
       name: 'calcal:food',
-      storage: createJSONStorage(() => localStorage)
+      storage: createJSONStorage(() => localStorage),
+      // partialize: qué guardar en localStorage. Las fotos base64 en entries
+      // pesan ~80KB cada una y saturan la cuota de 5MB rápido. Como las fotos
+      // viven en Supabase (food_entries.photo) y se rehidratan al cargar, NO
+      // las persistimos localmente. El cache local funciona igual y no se
+      // satura.
+      partialize: (state) => {
+        const slimEntries = {};
+        for (const [date, items] of Object.entries(state.entries || {})) {
+          slimEntries[date] = items.map((it) => {
+            if (!it.photo) return it;
+            const { photo, ...rest } = it;
+            return rest;
+          });
+        }
+        return {
+          ...state,
+          entries: slimEntries
+          // customIngredients y customMeals SÍ persisten con fotos
+          // (dataset pequeño, ~50 items max). Si un día crecen, podemos
+          // strip aquí también.
+        };
+      }
     }
   )
 );
+
+// ─────────────────────────────────────────────────────────────
+//  AUTO-RECOVERY: si localStorage se llena, detecta y libera espacio.
+//  Captura el error global de QuotaExceededError y purga el cache de
+//  entries (las fotos son los principales culpables). Después de purgar,
+//  la próxima escritura suele tener éxito porque hay espacio libre.
+// ─────────────────────────────────────────────────────────────
+if (typeof window !== 'undefined') {
+  window.addEventListener('unhandledrejection', (ev) => {
+    const msg = String(ev.reason?.message || ev.reason || '');
+    if (/quota.*exceed/i.test(msg) || /QuotaExceeded/.test(msg)) {
+      logErr('localStorage quota excedida — auto-purgando cache de fotos en entries');
+      toast.warn('Espacio local lleno. Limpio el cache de fotos automáticamente.', 6000);
+      // Strip photos del state actual y forzar re-persist
+      const cur = useFoodStore.getState();
+      const slimEntries = {};
+      for (const [date, items] of Object.entries(cur.entries || {})) {
+        slimEntries[date] = items.map(({ photo, ...rest }) => rest);
+      }
+      useFoodStore.setState({ entries: slimEntries });
+    }
+  });
+}
 
 // Centinela silencioso: solo alerta si customIngredients pasa de N>0 a 0
 // inesperadamente. Útil para detectar futuros bugs de wipe.

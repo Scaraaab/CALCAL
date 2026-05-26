@@ -99,11 +99,28 @@ export default function Settings() {
             <DiagRow ok={supabaseConfig.hasKey} label="VITE_SUPABASE_ANON_KEY" detail={supabaseConfig.hasKey ? 'configurada' : 'no detectada'} />
           </div>
 
-          <Button onClick={checkConnection} disabled={diagLoading} fullWidth>
-            {diagLoading
-              ? <><Loader2 size={16} className="animate-spin" /> Comprobando…</>
-              : <><Activity size={16} /> Probar conexión y escritura</>}
-          </Button>
+          <div className="grid grid-cols-1 gap-2">
+            <Button onClick={checkConnection} disabled={diagLoading} fullWidth>
+              {diagLoading
+                ? <><Loader2 size={16} className="animate-spin" /> Comprobando…</>
+                : <><Activity size={16} /> Probar conexión y escritura</>}
+            </Button>
+            <Button
+              variant="ghost"
+              fullWidth
+              onClick={() => {
+                if (!confirm('Esto borra el cache local (fotos, ajustes Gemini, racha…). Tus datos en Supabase se conservan y se descargarán al recargar. ¿Continuar?')) return;
+                // Borra solo keys de la app, no toca la sesión Supabase
+                Object.keys(localStorage).forEach((k) => {
+                  if (k.startsWith('calcal:')) localStorage.removeItem(k);
+                });
+                toast.success('Cache liberado. Recargando…');
+                setTimeout(() => location.reload(), 800);
+              }}
+            >
+              <Trash2 size={16} /> Liberar espacio (cache local)
+            </Button>
+          </div>
 
           {diag && (
             <div className="mt-3 space-y-1.5 text-xs">
