@@ -304,46 +304,36 @@ export async function fetchIngredients() {
 }
 
 /**
- * Upsert con feedback explícito. Devuelve { ok, reason?, data?, error? } para que
- * el caller pueda decidir qué hacer si falla, y loggea todo de forma muy visible.
+ * Upsert con feedback explícito. Devuelve { ok, reason?, data?, error? } para
+ * que el caller pueda detectar fallos silenciosos (no-auth, RLS bloqueando, etc.).
  */
 export async function upsertIngredient(ing) {
-  if (!isSupabaseConfigured) {
-    console.error('%c[db] upsertIngredient → ABORTADO: Supabase no configurado', 'color:#ff6b9d;font-weight:bold');
-    return { ok: false, reason: 'no-supabase' };
-  }
+  if (!isSupabaseConfigured) return { ok: false, reason: 'no-supabase' };
   const userId = await currentUserId();
   if (!userId) {
-    console.error('%c[db] upsertIngredient → ABORTADO: sin user_id (no autenticado)', 'color:#ff6b9d;font-weight:bold', ing);
+    warn('upsertIngredient: sin user_id (no autenticado)', ing.name);
     return { ok: false, reason: 'no-auth' };
   }
   const row = ingredientToRow(userId, ing);
-  console.log('%c[db] upsertIngredient → enviando a Supabase', 'color:#7c5cff', { id: row.id, name: row.name, user_id: row.user_id });
   const { data, error } = await supabase
     .from('custom_ingredients')
     .upsert(row, { onConflict: 'id' })
-    .select(); // devuelve la fila insertada/actualizada para verificar que pasó la RLS
+    .select(); // verifica que pasó RLS
   if (error) {
-    console.error('%c[db] upsertIngredient → ERROR', 'color:#ff6b9d;font-weight:bold', error.message, error);
+    warn('upsertIngredient', error);
     return { ok: false, reason: 'rpc-error', error };
   }
   if (!data || data.length === 0) {
-    // Sin error pero sin filas devueltas suele significar RLS bloqueando silenciosamente
-    console.error('%c[db] upsertIngredient → 0 filas devueltas (¿RLS bloqueó?)', 'color:#ff6b9d;font-weight:bold', { sent: row });
+    warn('upsertIngredient: 0 filas devueltas (¿RLS bloqueó?)', row);
     return { ok: false, reason: 'no-rows', data };
   }
-  console.log('%c[db] upsertIngredient → OK', 'color:#c8ff3d', data[0]);
   return { ok: true, data };
 }
 
 export async function removeIngredient(id) {
-  if (!isSupabaseConfigured) {
-    console.warn('[db] removeIngredient: Supabase no configurado');
-    return;
-  }
-  console.log('%c[db] removeIngredient', 'color:#7c5cff', id);
+  if (!isSupabaseConfigured) return;
   const { error } = await supabase.from('custom_ingredients').delete().eq('id', id);
-  if (error) console.error('%c[db] removeIngredient → ERROR', 'color:#ff6b9d;font-weight:bold', error.message, error);
+  if (error) warn('removeIngredient', error);
 }
 
 // ============================================================
@@ -523,7 +513,7 @@ export async function pushCommunityIngredient(ing, userName) {
       onConflict: 'share_id',
       ignoreDuplicates: true
     });
-  if (error) warn('pushCommunityIngredient', error);
+  if (error) { warn('pushCommunityIngredient', error); throw error; }
 }
 
 export async function pushCommunityMeal(meal, userName) {
@@ -536,11 +526,13 @@ export async function pushCommunityMeal(meal, userName) {
       onConflict: 'share_id',
       ignoreDuplicates: true
     });
-  if (error) warn('pushCommunityMeal', error);
+  if (error) { warn('pushCommunityMeal', error); throw error; }
 }
 
 /**
  * Versión batch — más eficiente para sync inicial.
+ * Lanza error si Supabase responde con error para que el caller (syncToCommunity)
+ * NO marque el flag de migración como completada en caso de fallo.
  */
 export async function pushCommunityIngredientsBatch(ingredients, userName) {
   if (!isSupabaseConfigured || !ingredients?.length) return;
@@ -551,7 +543,7 @@ export async function pushCommunityIngredientsBatch(ingredients, userName) {
   const { error } = await supabase
     .from('community_ingredients')
     .upsert(rows, { onConflict: 'share_id', ignoreDuplicates: true });
-  if (error) warn('pushCommunityIngredientsBatch', error);
+  if (error) { warn('pushCommunityIngredientsBatch', error); throw error; }
 }
 
 export async function pushCommunityMealsBatch(meals, userName) {
@@ -563,7 +555,7 @@ export async function pushCommunityMealsBatch(meals, userName) {
   const { error } = await supabase
     .from('community_meals')
     .upsert(rows, { onConflict: 'share_id', ignoreDuplicates: true });
-  if (error) warn('pushCommunityMealsBatch', error);
+  if (error) { warn('pushCommunityMealsBatch', error); throw error; }
 }
 
 /**
@@ -660,7 +652,7 @@ export async function upsertIngredientsBatch(ingredients) {
   const { error } = await supabase
     .from('custom_ingredients')
     .upsert(rows, { onConflict: 'id' });
-  if (error) warn('upsertIngredientsBatch', error);
+  if (error) { warn('upsertIngredientsBatch', error); throw error; }
 }
 
 export async function upsertMealsBatch(meals) {
@@ -671,7 +663,7 @@ export async function upsertMealsBatch(meals) {
   const { error } = await supabase
     .from('custom_meals')
     .upsert(rows, { onConflict: 'id' });
-  if (error) warn('upsertMealsBatch', error);
+  if (error) { warn('upsertMealsBatch', error); throw error; }
 }
 
 /** Escapa caracteres especiales del patrón LIKE/ILIKE. */

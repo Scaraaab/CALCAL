@@ -97,23 +97,25 @@ export default function SavedMealPicker({ meal, onClose, onConfirm }) {
           </div>
         </div>
 
-        {/* Selector de modo */}
-        <div className="flex p-1 rounded-2xl bg-ink-700/60 border border-white/5">
+        {/* Selector de modo — botones grandes (≥44px) con touch-action */}
+        <div className="flex p-1 rounded-2xl bg-ink-700/60 border border-white/5 gap-1">
           <button
             type="button"
             onClick={() => setMode('portion')}
-            className={`flex-1 py-2 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-3 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 touch-manipulation ${
               mode === 'portion' ? 'bg-white text-ink-950' : 'text-white/60'
             }`}
+            style={{ touchAction: 'manipulation' }}
           >
-            <Pizza size={14} /> Porción completa
+            <Pizza size={14} /> Porción
           </button>
           <button
             type="button"
             onClick={() => setMode('grams')}
-            className={`flex-1 py-2 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-3 rounded-xl text-sm font-medium transition flex items-center justify-center gap-1.5 touch-manipulation ${
               mode === 'grams' ? 'bg-white text-ink-950' : 'text-white/60'
             }`}
+            style={{ touchAction: 'manipulation' }}
           >
             <Scale size={14} /> Por gramos
           </button>
@@ -148,20 +150,21 @@ export default function SavedMealPicker({ meal, onClose, onConfirm }) {
                   value={gramsStr}
                   onChange={(e) => setGramsStr(sanitizeDecimal(e.target.value))}
                   placeholder={`Ej: ${Math.round(meal.yieldGrams / 4)}`}
-                  className="input pr-12"
-                  autoFocus
+                  className="input pr-12 touch-manipulation text-lg"
+                  style={{ touchAction: 'manipulation' }}
                 />
-                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-white/40">g</span>
+                <span className="absolute right-4 top-1/2 -translate-y-1/2 text-sm text-white/40 pointer-events-none">g</span>
               </div>
             </div>
 
-            {/* Quick chips para fracciones comunes */}
-            <div className="flex flex-wrap gap-1.5">
+            {/* Quick chips para fracciones comunes. py-2.5 + text-sm para touch
+                target ≥44px en móvil. */}
+            <div className="grid grid-cols-5 gap-1.5">
               {[
-                { label: '¼', frac: 0.25 },
-                { label: '⅓', frac: 0.33 },
-                { label: '½', frac: 0.5 },
-                { label: '¾', frac: 0.75 },
+                { label: '¼',    frac: 0.25 },
+                { label: '⅓',    frac: 0.33 },
+                { label: '½',    frac: 0.5 },
+                { label: '¾',    frac: 0.75 },
                 { label: '100g', value: 100 }
               ].map((q) => {
                 const g = q.value ?? Math.round(meal.yieldGrams * q.frac);
@@ -170,9 +173,11 @@ export default function SavedMealPicker({ meal, onClose, onConfirm }) {
                     key={q.label}
                     type="button"
                     onClick={() => setGramsStr(String(g))}
-                    className="chip hover:!bg-white/10"
+                    className="py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-medium text-white/80 hover:bg-white/10 active:bg-white/15 touch-manipulation flex flex-col items-center"
+                    style={{ touchAction: 'manipulation' }}
                   >
-                    {q.label} ({g}g)
+                    <span className="text-sm">{q.label}</span>
+                    <span className="text-[9px] text-white/40">{g}g</span>
                   </button>
                 );
               })}

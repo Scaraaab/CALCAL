@@ -260,8 +260,10 @@ export default function FoodSearch({ onAdd }) {
           </div>
           <div className="flex items-center justify-between bg-ink-700/60 rounded-2xl p-2">
             <button
+              type="button"
               onClick={() => setQtyStr(String(Math.max(step, +(qtyNum - step).toFixed(2))))}
-              className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center"
+              className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center touch-manipulation"
+              style={{ touchAction: 'manipulation' }}
             >
               <Minus size={16} />
             </button>
@@ -272,12 +274,15 @@ export default function FoodSearch({ onAdd }) {
               value={qtyStr}
               onChange={(e) => setQtyStr(sanitizeDecimal(e.target.value))}
               placeholder="0"
-              className="bg-transparent text-center font-bold text-2xl w-24 outline-none"
+              className="bg-transparent text-center font-bold text-2xl w-24 outline-none touch-manipulation"
+              style={{ touchAction: 'manipulation' }}
             />
-            <span className="text-xs text-white/40 pr-2">{active.unit === 'porcion' ? 'porción' : active.unit}</span>
+            <span className="text-xs text-white/40 pr-2 pointer-events-none">{active.unit === 'porcion' ? 'porción' : active.unit}</span>
             <button
+              type="button"
               onClick={() => setQtyStr(String(+((qtyNum || 0) + step).toFixed(2)))}
-              className="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center"
+              className="w-11 h-11 rounded-xl bg-white/5 flex items-center justify-center touch-manipulation"
+              style={{ touchAction: 'manipulation' }}
             >
               <Plus size={16} />
             </button>

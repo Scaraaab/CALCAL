@@ -56,19 +56,17 @@ export default function App() {
   const hydratedUserId = useRef(null);
 
   useEffect(() => {
-    const unsub = initAuthListener(async (session, event) => {
+    const unsub = initAuthListener(async (session) => {
       const auth = useAuthStore.getState();
       const userId = session?.user?.id || null;
-      console.log(`%c[CalCal:auth] evento=${event} userId=${userId} hydratedYa=${hydratedUserId.current}`, 'color:#8c70ff;font-weight:bold');
 
       if (userId) {
+        // Same user already hydrated → skip (evita pisar mutaciones en vuelo)
         if (hydratedUserId.current === userId) {
-          console.log(`%c[CalCal:auth] mismo usuario ya hidratado → SKIP hydrate (evita pisar mutaciones en vuelo)`, 'color:#888');
           auth.setHydrated(true);
           return;
         }
         try {
-          console.log(`%c[CalCal:auth] iniciando hydrateAll() para ${userId}`, 'color:#7c5cff');
           const data = await hydrateAll();
           if (data) {
             if (data.profile) useUserStore.getState().replaceProfile(data.profile);
@@ -79,27 +77,23 @@ export default function App() {
               ingredients: data.ingredients,
               meals:       data.meals
             });
-            // Migración one-time a la base de datos comunitaria (fire-and-forget).
-            // Solo corre una vez por userId en la vida de la app. Después de migrar,
-            // los nuevos items se publican en tiempo real desde addIngredient/addMeal.
+            // Migración one-time a community (fire-and-forget; flag persistente
+            // por userId — solo corre la primera vez para cada usuario).
             const userName = data.profile?.name
               || auth.user?.name
               || auth.user?.email?.split('@')[0]
               || 'Anónimo';
             useFoodStore.getState().syncToCommunity(userName, userId).catch((err) => {
-              console.warn('[CalCal:auth] syncToCommunity falló (no bloqueante)', err);
+              console.warn('[CalCal] syncToCommunity falló (no bloqueante)', err);
             });
-          } else {
-            console.warn('[CalCal:auth] hydrateAll() devolvió null (Supabase no configurado)');
           }
           hydratedUserId.current = userId;
         } catch (e) {
-          console.error('[CalCal:auth] Hydrate error', e);
+          console.error('[CalCal] Hydrate error', e);
         } finally {
           auth.setHydrated(true);
         }
       } else {
-        console.log(`%c[CalCal:auth] sin sesión → reseteando stores`, 'color:#ff6b9d');
         hydratedUserId.current = null;
         useFoodStore.getState().reset();
         useUserStore.getState().resetProfile();

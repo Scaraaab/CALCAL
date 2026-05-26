@@ -96,8 +96,12 @@ export default function LogFood() {
   const totalKcal = pending.reduce((s, x) => s + (x.kcal || 0), 0);
   const totalProtein = pending.reduce((s, x) => s + (x.protein || 0), 0);
 
+  // Reserva espacio en el scroll del contenido cuando la barra de pending está
+  // visible. Mide aprox 11rem (header + lista compacta + botón + safe-area).
+  const contentPaddingBottom = pending.length > 0 ? 'pb-[14rem]' : '';
+
   return (
-    <div className={pending.length > 0 ? 'pb-44' : ''}>
+    <div className={contentPaddingBottom}>
       <Header
         title="Registrar"
         subtitle={isAnotherDay ? `Para ${formatHuman(targetDate)}` : 'Comida'}
@@ -190,7 +194,9 @@ export default function LogFood() {
         </section>
       </div>
 
-      {/* Pending bar — sticky en la parte inferior cuando hay items */}
+      {/* Pending bar — fija al fondo cuando hay items.
+          z-40 va POR ENCIMA del BottomNav (z-30) para que el botón sea tappable.
+          Fondo sólido (no gradient) para cubrir completamente el área de la nav. */}
       <AnimatePresence>
         {pending.length > 0 && (
           <motion.div
@@ -198,19 +204,25 @@ export default function LogFood() {
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 100, opacity: 0 }}
             transition={{ type: 'spring', stiffness: 360, damping: 32 }}
-            className="fixed bottom-0 inset-x-0 z-30 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-ink-950 via-ink-950/95 to-transparent"
+            className="fixed bottom-0 inset-x-0 z-40 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] bg-ink-950/95 backdrop-blur-xl border-t border-white/10"
+            style={{ touchAction: 'manipulation' }}
           >
-            <div className="max-w-md mx-auto card p-3 shadow-card">
+            <div className="max-w-md mx-auto">
               <div className="flex items-center justify-between mb-2 px-1">
-                <div>
-                  <p className="text-[10px] uppercase tracking-wider text-white/40">Por añadir a {meal}{isAnotherDay && ` · ${formatHuman(targetDate)}`}</p>
-                  <p className="text-base font-bold">{pending.length} ítem{pending.length === 1 ? '' : 's'} · <span className="tabular-nums">{fmtNum(totalKcal)}</span> kcal <span className="text-xs text-white/40 ml-1">· P {fmtNum(totalProtein, 0)}g</span></p>
+                <div className="min-w-0">
+                  <p className="text-[10px] uppercase tracking-wider text-white/40 truncate">
+                    Por añadir a {meal}{isAnotherDay && ` · ${formatHuman(targetDate)}`}
+                  </p>
+                  <p className="text-sm font-bold">
+                    {pending.length} ítem{pending.length === 1 ? '' : 's'} ·{' '}
+                    <span className="tabular-nums">{fmtNum(totalKcal)}</span> kcal
+                    <span className="text-xs text-white/40 ml-1">· P {fmtNum(totalProtein, 0)}g</span>
+                  </p>
                 </div>
               </div>
-              {/* Mini lista de items (max 3 visibles, resto contador) */}
-              <ul className="space-y-1 max-h-40 overflow-y-auto mb-2">
+              <ul className="space-y-1 max-h-32 overflow-y-auto mb-3">
                 {pending.map((it, i) => (
-                  <li key={i} className="flex items-center gap-2 bg-white/3 rounded-xl px-2.5 py-1.5">
+                  <li key={i} className="flex items-center gap-2 bg-white/5 rounded-xl px-2.5 py-1.5">
                     {it.photo && <img src={it.photo} alt="" className="w-7 h-7 rounded-lg object-cover flex-none" />}
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate capitalize">{it.name}</p>
@@ -218,13 +230,24 @@ export default function LogFood() {
                         {it.qty} {it.unit} · {fmtNum(it.kcal)} kcal
                       </p>
                     </div>
-                    <button onClick={() => removePending(i)} aria-label="Quitar" className="w-7 h-7 rounded-full hover:bg-white/5 flex items-center justify-center text-white/40 hover:text-rose-300 flex-none">
-                      <Trash2 size={13} />
+                    <button
+                      type="button"
+                      onClick={() => removePending(i)}
+                      aria-label="Quitar"
+                      className="w-8 h-8 rounded-full hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-rose-300 flex-none touch-manipulation"
+                      style={{ touchAction: 'manipulation' }}
+                    >
+                      <Trash2 size={14} />
                     </button>
                   </li>
                 ))}
               </ul>
-              <button onClick={commitAll} className="btn-lime w-full">
+              <button
+                type="button"
+                onClick={commitAll}
+                className="btn-lime w-full touch-manipulation"
+                style={{ touchAction: 'manipulation' }}
+              >
                 <Check size={18} /> Añadir al diario
               </button>
             </div>

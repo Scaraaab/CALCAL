@@ -14,7 +14,8 @@
       "Bash(taskkill /F /FI \"WindowTitle eq npm*\")",
       "Bash(taskkill /F /IM node.exe /FI \"MEMUSAGE gt 50000\")",
       "Bash(npm uninstall *)",
-      "Bash(grep -oE \"\\(supabase|googleapis|navigateFallback|NetworkOnly|skipWaiting|clientsClaim|cleanupOutdatedCaches\\)[^,;}]{0,40}\" dist/sw.js)"
+      "Bash(grep -oE \"\\(supabase|googleapis|navigateFallback|NetworkOnly|skipWaiting|clientsClaim|cleanupOutdatedCaches\\)[^,;}]{0,40}\" dist/sw.js)",
+      "Bash(npx vite *)"
     ]
   }
 }

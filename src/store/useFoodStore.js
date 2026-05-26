@@ -157,10 +157,9 @@ export const useFoodStore = create(
 
       // ============ CUSTOM INGREDIENTS ============
       addIngredient: (ing) => {
-        log('addIngredient → recibido', ing);
         const clean = {
           id: uuid(),
-          shareId: uuid(), // ← share_id único global para emparejar con community
+          shareId: uuid(),
           name: (ing.name || '').trim(),
           measureType: ing.measureType || 'per100g',
           baseQty: ing.measureType === 'per100g' ? 100 : 1,
@@ -173,30 +172,14 @@ export const useFoodStore = create(
           photo: ing.photo || null,
           createdAt: Date.now()
         };
-        if (!clean.name) {
-          logErr('addIngredient → ABORTADO: nombre vacío');
-          return null;
-        }
-        const before = get().customIngredients.length;
+        if (!clean.name) return null;
         set((s) => ({ customIngredients: [clean, ...s.customIngredients] }));
-        const after = get().customIngredients.length;
-        log(`addIngredient → local: ${before} → ${after}`, { id: clean.id, name: clean.name });
-
-        // write-through con verificación (personal)
+        // Personal + community (fire-and-forget; los errores se loggean dentro)
         db.upsertIngredient(clean).then((res) => {
-          if (res?.ok) {
-            log(`addIngredient → Supabase OK: ${clean.name}`);
-          } else {
-            logErr(`addIngredient → Supabase FALLÓ (${res?.reason}). El ingrediente está SOLO en local y se perderá al recargar.`, res);
-          }
-        }).catch((err) => {
-          logErr('addIngredient → upsert promise rechazada', err);
-        });
-
-        // Publicar a community (fire-and-forget, ignoreDuplicates si ya existe)
-        const userName = get()._communityUserName || '';
-        db.pushCommunityIngredient(clean, userName);
-
+          if (!res?.ok) logErr(`addIngredient → Supabase FALLÓ (${res?.reason})`, res);
+        }).catch((err) => logErr('addIngredient → personal upsert rejected', err));
+        db.pushCommunityIngredient(clean, get()._communityUserName || '')
+          .catch((err) => logErr('addIngredient → community push rejected', err));
         return clean;
       },
       updateIngredient: (id, patch) => {
@@ -216,16 +199,10 @@ export const useFoodStore = create(
         }
       },
       removeIngredient: (id) => {
-        const target = get().customIngredients.find((i) => i.id === id);
-        log('removeIngredient →', { id, name: target?.name });
-        // Identifica comidas afectadas para re-upsertarlas (perdieron un ingrediente)
+        // Identifica comidas afectadas para re-upsertarlas o borrarlas si quedan vacías
         const affectedMeals = get().customMeals
           .filter((m) => m.items.some((it) => it.ingredientId === id))
-          .map((m) => ({
-            ...m,
-            items: m.items.filter((it) => it.ingredientId !== id)
-          }));
-        const before = get().customIngredients.length;
+          .map((m) => ({ ...m, items: m.items.filter((it) => it.ingredientId !== id) }));
         set((s) => ({
           customIngredients: s.customIngredients.filter((i) => i.id !== id),
           customMeals: s.customMeals
@@ -234,7 +211,6 @@ export const useFoodStore = create(
               : m)
             .filter((m) => m.items.length > 0)
         }));
-        log(`removeIngredient → local: ${before} → ${get().customIngredients.length}`);
         db.removeIngredient(id);
         affectedMeals.forEach((m) => {
           if (m.items.length === 0) db.removeMeal(m.id);
@@ -322,47 +298,24 @@ export const useFoodStore = create(
        */
       hydrate: ({ entries, weights, water, ingredients, meals }) => {
         const cur = get();
-        console.group('%c[CalCal:store] hydrate ← Supabase', 'color:#c8ff3d;font-weight:bold');
-        console.log('Recibido del servidor:', {
-          entries:     entries === null ? 'NULL (fetch falló)' : `${Object.keys(entries || {}).length} días`,
-          weights:     weights === null ? 'NULL (fetch falló)' : `${weights?.length ?? 0} pesajes`,
-          water:       water === null ? 'NULL (fetch falló)' : `${Object.keys(water || {}).length} días`,
-          ingredients: ingredients === null ? 'NULL (fetch falló)' : `${ingredients?.length ?? 0} items`,
-          meals:       meals === null ? 'NULL (fetch falló)' : `${meals?.length ?? 0} items`
-        });
-        console.log('Estado local actual:', {
-          entries:           `${Object.keys(cur.entries).length} días`,
-          weights:           `${cur.weights.length} pesajes`,
-          water:             `${Object.keys(cur.water).length} días`,
-          customIngredients: `${cur.customIngredients.length} items`,
-          customMeals:       `${cur.customMeals.length} items`
-        });
-
-        // Decisión por slice
-        if (ingredients === null) {
-          log('hydrate.customIngredients → mantengo local (server falló)');
-        } else if (ingredients.length === 0 && cur.customIngredients.length > 0) {
-          logErr(`hydrate.customIngredients → ATENCIÓN: server devolvió [] pero local tiene ${cur.customIngredients.length}. REEMPLAZANDO con [].`);
-          logErr('  Causa probable: upserts anteriores fallaron silenciosamente.');
-          logErr('  Local que se va a perder:', cur.customIngredients.map((i) => i.name));
-        } else {
-          log(`hydrate.customIngredients → ${cur.customIngredients.length} → ${ingredients.length}`);
+        // Alertas críticas: si el server devuelve vacío y teníamos datos locales,
+        // probablemente perdimos datos por un upsert silencioso fallido.
+        if (ingredients && ingredients.length === 0 && cur.customIngredients.length > 0) {
+          logErr(`hydrate: server devolvió [] ingredientes pero local tenía ${cur.customIngredients.length}. Datos en riesgo:`,
+            cur.customIngredients.map((i) => i.name));
         }
-
+        if (meals && meals.length === 0 && cur.customMeals.length > 0) {
+          logErr(`hydrate: server devolvió [] meals pero local tenía ${cur.customMeals.length}`,
+            cur.customMeals.map((m) => m.name));
+        }
+        // null = fetch falló → mantenemos local. [] o objeto = server respondió → reemplazamos.
         set({
           entries:           entries     ?? cur.entries,
           weights:           weights     ?? cur.weights,
           water:             water       ?? cur.water,
           customIngredients: ingredients ?? cur.customIngredients,
           customMeals:       meals       ?? cur.customMeals
-          // favorites / streakData / planner / recipes / shoppingList: locales, no se tocan
         });
-
-        log('Estado tras hydrate:', {
-          customIngredients: get().customIngredients.length,
-          customMeals:       get().customMeals.length
-        });
-        console.groupEnd();
       },
 
       /**
@@ -384,7 +337,6 @@ export const useFoodStore = create(
        * Idempotente y silencioso (solo loggea, nunca lanza al caller).
        */
       syncToCommunity: async (userName, userId) => {
-        // Guardamos el nombre para futuras publicaciones (addIngredient/addMeal).
         set({ _communityUserName: userName || '' });
 
         if (!userId) {
@@ -392,11 +344,18 @@ export const useFoodStore = create(
           return;
         }
 
-        // Flag persistente por usuario. Si ya migramos antes, salta.
-        const flagKey = `calcal:community_migrated:${userId}`;
-        if (typeof localStorage !== 'undefined' && localStorage.getItem(flagKey)) {
-          log(`syncToCommunity → SKIP: ya migrado (${userId.slice(0, 8)}…)`);
-          return;
+        // FLAG_KEY v2: invalida los flags v1 (que se marcaban prematuramente
+        // por un bug donde los pushes no lanzaban error al fallar).
+        const flagKey = `calcal:community_migrated_v2:${userId}`;
+        const oldKey  = `calcal:community_migrated:${userId}`;
+
+        // Limpieza activa del flag viejo si existe
+        if (typeof localStorage !== 'undefined') {
+          if (localStorage.getItem(oldKey)) localStorage.removeItem(oldKey);
+          if (localStorage.getItem(flagKey)) {
+            log(`syncToCommunity → SKIP: ya migrado (${userId.slice(0, 8)}…)`);
+            return;
+          }
         }
 
         const state = get();
@@ -405,7 +364,6 @@ export const useFoodStore = create(
 
         if (personalIngs.length === 0 && personalMeals.length === 0) {
           log('syncToCommunity → SKIP: usuario sin items personales');
-          // Aun así marcamos el flag para no volver a comprobar
           if (typeof localStorage !== 'undefined') localStorage.setItem(flagKey, String(Date.now()));
           return;
         }
@@ -430,7 +388,6 @@ export const useFoodStore = create(
 
         // 2. Actualiza local con los nuevos shareIds
         if (ingFixes.length || mealFixes.length) {
-          log(`syncToCommunity → ${ingFixes.length} ingr + ${mealFixes.length} comidas necesitan shareId`);
           set((s) => ({
             customIngredients: s.customIngredients.map((i) => {
               const f = ingFixes.find((x) => x.id === i.id);
@@ -443,8 +400,11 @@ export const useFoodStore = create(
           }));
         }
 
-        // 3. Persiste shareIds en personal + publica en community.
-        // Si algo falla NO marcamos el flag → reintenta al siguiente login.
+        // 3. Persiste en personal + publica en community.
+        // Las funciones de db.js LANZAN error si Supabase falla → catch fires →
+        // el flag NO se marca → próximo login reintenta. Crucial: este bug
+        // existía en v1 — los pushes solo loggeaban y el flag se marcaba aunque
+        // la community quedara vacía.
         try {
           if (ingFixes.length) await db.upsertIngredientsBatch(ingsWithIds);
           if (mealFixes.length) await db.upsertMealsBatch(mealsWithIds);
@@ -459,18 +419,13 @@ export const useFoodStore = create(
       },
 
       /** Limpia todo (logout). */
-      reset: () => {
-        const cur = get();
-        logErr(`reset() llamado. Borrando: ${cur.customIngredients.length} ingredientes, ${cur.customMeals.length} comidas, ${cur.weights.length} pesajes, ${Object.keys(cur.entries).length} días de comida`);
-        console.trace('reset() stack trace ↑'); // saber quién lo invocó
-        set({
-          entries: {}, water: {}, weights: [],
-          favorites: [],
-          streakData: { lastLoggedDate: null, current: 0, best: 0 },
-          planner: {}, recipes: [], shoppingList: [],
-          customIngredients: [], customMeals: []
-        });
-      }
+      reset: () => set({
+        entries: {}, water: {}, weights: [],
+        favorites: [],
+        streakData: { lastLoggedDate: null, current: 0, best: 0 },
+        planner: {}, recipes: [], shoppingList: [],
+        customIngredients: [], customMeals: []
+      })
     }),
     {
       name: 'calcal:food',
@@ -479,38 +434,18 @@ export const useFoodStore = create(
   )
 );
 
-// ─────────────────────────────────────────────────────────────
-//  CENTINELA: cualquier cambio en customIngredients se loguea.
-//  Si pasa de N>0 a 0, imprime un stack trace para identificar
-//  quién está borrando los ingredientes.
-// ─────────────────────────────────────────────────────────────
+// Centinela silencioso: solo alerta si customIngredients pasa de N>0 a 0
+// inesperadamente. Útil para detectar futuros bugs de wipe.
 {
   let prev = useFoodStore.getState().customIngredients;
-  log(`centinela inicial: customIngredients = ${prev.length} items`, prev.map((i) => i.name));
   useFoodStore.subscribe((state) => {
     const next = state.customIngredients;
     if (next === prev) return;
-    if (next.length !== prev.length) {
-      if (next.length === 0 && prev.length > 0) {
-        logErr(`⚠️ customIngredients VACIADO: ${prev.length} → 0`);
-        console.trace('Quién vació customIngredients ↑');
-      } else {
-        log(`customIngredients: ${prev.length} → ${next.length}`);
-      }
-    } else {
-      log(`customIngredients: contenido actualizado (mismo count: ${next.length})`);
+    if (next.length === 0 && prev.length > 0) {
+      logErr(`⚠️ customIngredients VACIADO: ${prev.length} → 0`);
+      console.trace('Quién vació customIngredients ↑');
     }
     prev = next;
-  });
-}
-
-// Expone el store en window para inspección manual desde la consola:
-//   __store.customIngredients
-//   __store // estado completo
-if (typeof window !== 'undefined') {
-  Object.defineProperty(window, '__store', {
-    get: () => useFoodStore.getState(),
-    configurable: true
   });
 }
 

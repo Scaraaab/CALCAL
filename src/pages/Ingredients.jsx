@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
-import { Plus, Search, Trash2, Pencil, Carrot, Camera, Sparkles, Loader2, ImageIcon, ScanLine, X, ChevronRight } from 'lucide-react';
+import { Plus, Search, Trash2, Carrot, Camera, Sparkles, Loader2, ImageIcon, ScanLine, X, ChevronRight } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
