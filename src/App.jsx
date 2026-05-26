@@ -3,6 +3,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import Layout from './components/layout/Layout';
 import ErrorBoundary from './components/ErrorBoundary';
+import Toast from './components/ui/Toast';
 import Login from './pages/Login';
 import Onboarding from './pages/Onboarding';
 import Dashboard from './pages/Dashboard';
@@ -105,6 +106,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      <Toast />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route

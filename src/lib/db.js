@@ -10,6 +10,7 @@
 // funcionando en modo offline contra el cache local de Zustand.
 
 import { supabase, isSupabaseConfigured } from './supabase';
+import { toast } from '../store/useToastStore';
 
 function warn(label, err) {
   // eslint-disable-next-line no-console
@@ -20,6 +21,31 @@ async function currentUserId() {
   if (!supabase) return null;
   const { data } = await supabase.auth.getSession();
   return data?.session?.user?.id || null;
+}
+
+/**
+ * Clasifica un error de Supabase y emite un toast user-friendly.
+ * Devuelve true si el error es crítico (write falla, datos en riesgo).
+ */
+function reportWriteError(operation, error) {
+  if (!error) return false;
+  const code = error.code || '';
+  const msg  = error.message || '';
+
+  if (code === '42P01' || /relation .* does not exist/i.test(msg)) {
+    toast.error(`Falta una tabla en Supabase. Ejecuta el schema.sql.\n(${operation})`);
+  } else if (code === '42703' || /column .* does not exist/i.test(msg)) {
+    toast.error(`Falta una columna en Supabase. Ejecuta el schema.sql.\n(${operation}: ${msg})`);
+  } else if (code === '42501' || /row-level security/i.test(msg) || /policy/i.test(msg)) {
+    toast.error(`Supabase rechazó por RLS. Revisa las policies.\n(${operation})`);
+  } else if (code === 'PGRST301' || /JWT/i.test(msg) || /authentication/i.test(msg)) {
+    toast.error('Sesión expirada o no autenticado. Cierra sesión y vuelve a entrar.', 9000);
+  } else if (/Failed to fetch/i.test(msg) || /NetworkError/i.test(msg)) {
+    toast.error(`Sin conexión a Supabase. Revisa tu red.\n(${operation})`);
+  } else {
+    toast.error(`Error al guardar (${operation}): ${msg.slice(0, 80)}`, 8000);
+  }
+  return true;
 }
 
 // ============================================================
@@ -89,7 +115,7 @@ export async function upsertProfile(profile) {
   const { error } = await supabase
     .from('profiles')
     .upsert(profileToRow(userId, profile), { onConflict: 'user_id' });
-  if (error) warn('upsertProfile', error);
+  if (error) { warn('upsertProfile', error); reportWriteError('perfil', error); }
 }
 
 // ============================================================
@@ -161,26 +187,26 @@ export async function fetchEntries() {
 export async function upsertEntry(date, entry) {
   if (!isSupabaseConfigured) return;
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) { toast.error('No autenticado. La comida no se guardó.'); return; }
   const { error } = await supabase
     .from('food_entries')
     .upsert(entryToRow(userId, entry, date), { onConflict: 'id' });
-  if (error) warn('upsertEntry', error);
+  if (error) { warn('upsertEntry', error); reportWriteError('comida', error); }
 }
 
 export async function upsertEntries(date, entries) {
   if (!isSupabaseConfigured || !entries?.length) return;
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) { toast.error('No autenticado. Las comidas no se guardaron.'); return; }
   const rows = entries.map((e) => entryToRow(userId, e, date));
   const { error } = await supabase.from('food_entries').upsert(rows, { onConflict: 'id' });
-  if (error) warn('upsertEntries', error);
+  if (error) { warn('upsertEntries', error); reportWriteError('comidas', error); }
 }
 
 export async function removeEntry(entryId) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from('food_entries').delete().eq('id', entryId);
-  if (error) warn('removeEntry', error);
+  if (error) { warn('removeEntry', error); reportWriteError('borrar comida', error); }
 }
 
 // ============================================================
@@ -203,11 +229,11 @@ export async function fetchWeights() {
 export async function upsertWeight(date, kg) {
   if (!isSupabaseConfigured) return;
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) { toast.error('No autenticado. El peso no se guardó.'); return; }
   const { error } = await supabase
     .from('weights')
     .upsert({ user_id: userId, date, kg }, { onConflict: 'user_id,date' });
-  if (error) warn('upsertWeight', error);
+  if (error) { warn('upsertWeight', error); reportWriteError('peso', error); }
 }
 
 export async function removeWeight(date) {
@@ -219,7 +245,7 @@ export async function removeWeight(date) {
     .delete()
     .eq('user_id', userId)
     .eq('date', date);
-  if (error) warn('removeWeight', error);
+  if (error) { warn('removeWeight', error); reportWriteError('borrar peso', error); }
 }
 
 // ============================================================
@@ -243,11 +269,11 @@ export async function fetchWater() {
 export async function upsertWater(date, ml) {
   if (!isSupabaseConfigured) return;
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) { toast.error('No autenticado. El agua no se guardó.'); return; }
   const { error } = await supabase
     .from('water_logs')
     .upsert({ user_id: userId, date, ml }, { onConflict: 'user_id,date' });
-  if (error) warn('upsertWater', error);
+  if (error) { warn('upsertWater', error); reportWriteError('agua', error); }
 }
 
 // ============================================================
@@ -312,6 +338,7 @@ export async function upsertIngredient(ing) {
   const userId = await currentUserId();
   if (!userId) {
     warn('upsertIngredient: sin user_id (no autenticado)', ing.name);
+    toast.error('No autenticado. El ingrediente no se guardó.');
     return { ok: false, reason: 'no-auth' };
   }
   const row = ingredientToRow(userId, ing);
@@ -321,10 +348,12 @@ export async function upsertIngredient(ing) {
     .select(); // verifica que pasó RLS
   if (error) {
     warn('upsertIngredient', error);
+    reportWriteError('ingrediente', error);
     return { ok: false, reason: 'rpc-error', error };
   }
   if (!data || data.length === 0) {
     warn('upsertIngredient: 0 filas devueltas (¿RLS bloqueó?)', row);
+    toast.error('Supabase no devolvió la fila guardada. Posible bloqueo de RLS.');
     return { ok: false, reason: 'no-rows', data };
   }
   return { ok: true, data };
@@ -333,7 +362,7 @@ export async function upsertIngredient(ing) {
 export async function removeIngredient(id) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from('custom_ingredients').delete().eq('id', id);
-  if (error) warn('removeIngredient', error);
+  if (error) { warn('removeIngredient', error); reportWriteError('borrar ingrediente', error); }
 }
 
 // ============================================================
@@ -384,17 +413,17 @@ export async function fetchMeals() {
 export async function upsertMeal(meal) {
   if (!isSupabaseConfigured) return;
   const userId = await currentUserId();
-  if (!userId) return;
+  if (!userId) { toast.error('No autenticado. La comida no se guardó.'); return; }
   const { error } = await supabase
     .from('custom_meals')
     .upsert(mealToRow(userId, meal), { onConflict: 'id' });
-  if (error) warn('upsertMeal', error);
+  if (error) { warn('upsertMeal', error); reportWriteError('comida compuesta', error); }
 }
 
 export async function removeMeal(id) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from('custom_meals').delete().eq('id', id);
-  if (error) warn('removeMeal', error);
+  if (error) { warn('removeMeal', error); reportWriteError('borrar comida', error); }
 }
 
 // ============================================================
@@ -686,4 +715,73 @@ export async function hydrateAll() {
     fetchMeals()
   ]);
   return { profile, entries, weights, water, ingredients, meals };
+}
+
+// ============================================================
+//  DIAGNÓSTICO — para el panel de Settings
+// ============================================================
+
+/**
+ * Hace un health-check completo de Supabase. Devuelve un objeto con flags y
+ * mensajes que el panel de Settings renderiza para que el user vea qué falla.
+ */
+export async function runDiagnostic() {
+  const result = {
+    configured: isSupabaseConfigured,
+    authOk:     false,
+    userId:     null,
+    userEmail:  null,
+    tablesOk:   {},     // { profiles: true/false, food_entries: true/false, ... }
+    writeOk:    false,
+    writeError: null
+  };
+
+  if (!isSupabaseConfigured) {
+    result.error = 'Variables VITE_SUPABASE_URL o VITE_SUPABASE_ANON_KEY no configuradas en Vercel.';
+    return result;
+  }
+
+  // 1) Auth
+  try {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) throw error;
+    result.authOk    = !!data?.session;
+    result.userId    = data?.session?.user?.id || null;
+    result.userEmail = data?.session?.user?.email || null;
+  } catch (e) {
+    result.authError = e.message;
+  }
+
+  // 2) Tablas (lectura mínima — count head)
+  const tables = ['profiles', 'food_entries', 'weights', 'water_logs',
+                  'custom_ingredients', 'custom_meals',
+                  'community_ingredients', 'community_meals'];
+  for (const t of tables) {
+    try {
+      const { error } = await supabase.from(t).select('*', { count: 'exact', head: true }).limit(1);
+      result.tablesOk[t] = !error;
+      if (error) result.tablesOk[t + '_error'] = error.message;
+    } catch (e) {
+      result.tablesOk[t] = false;
+      result.tablesOk[t + '_error'] = e.message;
+    }
+  }
+
+  // 3) Test de escritura: insertar y borrar inmediatamente un water_log (operación liviana)
+  if (result.authOk && result.userId) {
+    const probeDate = '1970-01-01'; // fecha mítica que no choca con datos reales
+    try {
+      const { error: upErr } = await supabase
+        .from('water_logs')
+        .upsert({ user_id: result.userId, date: probeDate, ml: 1 }, { onConflict: 'user_id,date' });
+      if (upErr) throw upErr;
+      // Limpieza inmediata
+      await supabase.from('water_logs').delete().eq('user_id', result.userId).eq('date', probeDate);
+      result.writeOk = true;
+    } catch (e) {
+      result.writeError = e.message;
+    }
+  }
+
+  return result;
 }

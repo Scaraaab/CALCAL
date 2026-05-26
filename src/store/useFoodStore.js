@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { todayISO } from '../utils/date';
 import { uuid } from '../utils/format';
 import * as db from '../lib/db';
+import { toast } from './useToastStore';
 
 // ─────────────────────────────────────────────────────────────
 //  DEBUG LOGGING
@@ -300,21 +301,27 @@ export const useFoodStore = create(
         const cur = get();
         // Alertas críticas: si el server devuelve vacío y teníamos datos locales,
         // probablemente perdimos datos por un upsert silencioso fallido.
-        if (ingredients && ingredients.length === 0 && cur.customIngredients.length > 0) {
-          logErr(`hydrate: server devolvió [] ingredientes pero local tenía ${cur.customIngredients.length}. Datos en riesgo:`,
-            cur.customIngredients.map((i) => i.name));
+        // ⚠️ NO REEMPLAZAMOS local en este caso — mejor mantener lo que el user
+        // tenía aunque no esté en Supabase, y avisar para que investigue.
+        const ingredientsWiped = ingredients && ingredients.length === 0 && cur.customIngredients.length > 0;
+        const mealsWiped       = meals && meals.length === 0 && cur.customMeals.length > 0;
+        const entriesWiped     = entries && Object.keys(entries).length === 0 && Object.keys(cur.entries).length > 0;
+
+        if (ingredientsWiped || mealsWiped || entriesWiped) {
+          logErr('hydrate detectó posible pérdida de datos. Manteniendo cache local.');
+          toast.error(
+            'Supabase devolvió 0 datos pero tu cache local tenía. Mantengo lo local para no perderlo. Revisa Settings → Diagnóstico.',
+            10000
+          );
         }
-        if (meals && meals.length === 0 && cur.customMeals.length > 0) {
-          logErr(`hydrate: server devolvió [] meals pero local tenía ${cur.customMeals.length}`,
-            cur.customMeals.map((m) => m.name));
-        }
-        // null = fetch falló → mantenemos local. [] o objeto = server respondió → reemplazamos.
+
+        // Si detectamos wipe, mantenemos local; de lo contrario flujo normal.
         set({
-          entries:           entries     ?? cur.entries,
-          weights:           weights     ?? cur.weights,
-          water:             water       ?? cur.water,
-          customIngredients: ingredients ?? cur.customIngredients,
-          customMeals:       meals       ?? cur.customMeals
+          entries:           entriesWiped     ? cur.entries           : (entries     ?? cur.entries),
+          weights:           weights          ?? cur.weights,
+          water:             water            ?? cur.water,
+          customIngredients: ingredientsWiped ? cur.customIngredients : (ingredients ?? cur.customIngredients),
+          customMeals:       mealsWiped       ? cur.customMeals       : (meals       ?? cur.customMeals)
         });
       },
 

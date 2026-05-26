@@ -7,6 +7,15 @@ const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const isSupabaseConfigured = Boolean(url && anonKey);
 
+// Expuesto para diagnóstico (Settings panel)
+export const supabaseConfig = {
+  url: url || '',
+  hasUrl: Boolean(url),
+  hasKey: Boolean(anonKey),
+  // Útil para verificar de un vistazo qué project está conectado
+  projectRef: url ? (url.match(/https:\/\/([^.]+)\./)?.[1] || '') : ''
+};
+
 export const supabase = isSupabaseConfigured
   ? createClient(url, anonKey, {
       auth: {

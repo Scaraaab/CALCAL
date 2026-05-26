@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sparkles, Trash2, Download, ShoppingCart, Target, Droplet, Save, Eye, EyeOff } from 'lucide-react';
+import { Sparkles, Trash2, Download, ShoppingCart, Target, Droplet, Save, Eye, EyeOff, Activity, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 import Header from '../components/layout/Header';
 import Card from '../components/ui/Card';
 import Input from '../components/ui/Input';
@@ -11,6 +11,9 @@ import { useAuthStore } from '../store/useAuthStore';
 import { getApiKey, setApiKey, hasApiKey } from '../lib/claude';
 import { storage } from '../lib/storage';
 import { GOALS, ACTIVITY } from '../lib/nutrition';
+import { supabaseConfig } from '../lib/supabase';
+import { runDiagnostic } from '../lib/db';
+import { toast } from '../store/useToastStore';
 
 export default function Settings() {
   const profile = useUserStore((s) => s.profile);
@@ -32,6 +35,26 @@ export default function Settings() {
   function saveKey() {
     setApiKey(apiKey.trim());
     setSaved(true);
+  }
+
+  // Diagnóstico de Supabase
+  const [diag, setDiag] = useState(null);
+  const [diagLoading, setDiagLoading] = useState(false);
+  async function checkConnection() {
+    setDiagLoading(true);
+    setDiag(null);
+    try {
+      const r = await runDiagnostic();
+      setDiag(r);
+      if (r.writeOk) toast.success('Conexión OK — escritura verificada en Supabase.');
+      else if (!r.configured) toast.error('Supabase no está configurado (env vars).');
+      else if (!r.authOk) toast.error('Sin sesión válida. Cierra sesión y vuelve a entrar.');
+      else if (r.writeError) toast.error(`Escritura falló: ${r.writeError.slice(0, 80)}`, 9000);
+    } catch (e) {
+      toast.error('Error ejecutando diagnóstico: ' + e.message);
+    } finally {
+      setDiagLoading(false);
+    }
   }
 
   function reset() {
@@ -60,6 +83,63 @@ export default function Settings() {
       <Header title="Ajustes" back />
 
       <div className="px-5 space-y-4">
+        {/* Diagnóstico de conexión a Supabase */}
+        <Card className="p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity size={18} className="text-brand-300" />
+            <h2 className="font-bold">Diagnóstico</h2>
+          </div>
+          <p className="text-sm text-white/60 mb-3">
+            Verifica si la app puede leer y escribir en Supabase. Si algo no se guarda, empieza por aquí.
+          </p>
+
+          {/* Quick status — env vars */}
+          <div className="space-y-1.5 text-xs mb-3">
+            <DiagRow ok={supabaseConfig.hasUrl} label="VITE_SUPABASE_URL" detail={supabaseConfig.projectRef || 'no detectada'} />
+            <DiagRow ok={supabaseConfig.hasKey} label="VITE_SUPABASE_ANON_KEY" detail={supabaseConfig.hasKey ? 'configurada' : 'no detectada'} />
+          </div>
+
+          <Button onClick={checkConnection} disabled={diagLoading} fullWidth>
+            {diagLoading
+              ? <><Loader2 size={16} className="animate-spin" /> Comprobando…</>
+              : <><Activity size={16} /> Probar conexión y escritura</>}
+          </Button>
+
+          {diag && (
+            <div className="mt-3 space-y-1.5 text-xs">
+              <DiagRow ok={diag.authOk} label="Sesión autenticada" detail={diag.userEmail || diag.authError || ''} />
+              {Object.keys(diag.tablesOk).filter((k) => !k.endsWith('_error')).map((t) => (
+                <DiagRow
+                  key={t}
+                  ok={diag.tablesOk[t]}
+                  label={t}
+                  detail={diag.tablesOk[t] ? 'accesible' : (diag.tablesOk[t + '_error'] || 'error')}
+                />
+              ))}
+              <DiagRow
+                ok={diag.writeOk}
+                label="Escritura"
+                detail={diag.writeOk ? 'OK (test write+delete)' : (diag.writeError || 'no probada')}
+              />
+              {!supabaseConfig.hasUrl && (
+                <p className="text-amber-300 text-[11px] mt-2">
+                  ⚠ Falta env var en Vercel. Settings → Environment Variables → añade VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY y redeploy.
+                </p>
+              )}
+              {diag.configured && !diag.authOk && (
+                <p className="text-amber-300 text-[11px] mt-2">
+                  ⚠ Sin sesión. Cierra sesión (Profile → Cerrar sesión) y vuelve a entrar con Google.
+                </p>
+              )}
+              {diag.authOk && !diag.writeOk && diag.writeError && (
+                <p className="text-rose-300 text-[11px] mt-2">
+                  ⚠ Auth OK pero la escritura falla. Probable: RLS rota o schema incompleto. Re-ejecuta supabase/schema.sql.
+                </p>
+              )}
+            </div>
+          )}
+        </Card>
+
         {/* Coach IA (Gemini) */}
         <Card className="p-5">
           <div className="flex items-center gap-2 mb-3">
@@ -201,6 +281,18 @@ export default function Settings() {
           Tus datos se guardan localmente. Para sincronizar entre dispositivos conecta Supabase o Firebase.
         </p>
       </div>
+    </div>
+  );
+}
+
+function DiagRow({ ok, label, detail }) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/3">
+      {ok
+        ? <CheckCircle2 size={14} className="text-emerald-400 flex-none" />
+        : <XCircle size={14} className="text-rose-400 flex-none" />}
+      <span className="font-mono text-white/80 flex-none">{label}</span>
+      <span className="text-white/45 truncate">{detail}</span>
     </div>
   );
 }
