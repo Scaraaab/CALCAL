@@ -46,35 +46,48 @@ export default function LogFood() {
   const [mode, setMode] = useState('texto');
   const [pickerMeal, setPickerMeal] = useState(null);
   const [committing, setCommitting] = useState(false);
-
-  function backDestination() {
-    return isAnotherDay ? `/history?date=${targetDate}` : '/';
-  }
+  const [commitError, setCommitError] = useState(null); // mensaje inline en pending bar
 
   function handleParsed(items) {
     setPending((p) => [...p, ...items]);
+    setCommitError(null); // limpiar error al añadir items nuevos
   }
 
   /**
-   * AWAIT a la escritura antes de navegar. Si Supabase responde con error o
-   * RLS bloquea, NO navegamos y dejamos el pending list intacto para que el
-   * user pueda reintentar tras corregir el problema (visto en el toast).
+   * Guarda los items pendientes. Siempre navega a "/" (Dashboard) tras éxito —
+   * más predecible que volver al historial. Si falla, muestra error inline + toast
+   * y NO navega para que el user pueda reintentar.
+   *
+   * Timeout de 12s: si Supabase tarda más, asumimos network rota y mostramos error.
    */
   async function commitAll() {
     if (!pending.length || committing) return;
     setCommitting(true);
+    setCommitError(null);
     try {
       const items = pending.map((it) => ({ ...it, meal }));
-      const res = await addEntries(items, targetDate);
-      // Si upsertEntries devuelve ok:false, el toast ya se mostró desde db.js
-      if (res && res.ok === false) {
-        // No navegar — el user ve el toast y puede revisar/reintentar
+
+      // Race contra timeout de 12s
+      const result = await Promise.race([
+        addEntries(items, targetDate),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout 12s — Supabase no responde')), 12000))
+      ]);
+
+      // Si retorna ok:false (RLS/auth/red), no navegamos
+      if (result && result.ok === false) {
+        const reason = result.reason || 'desconocido';
+        setCommitError(`No se guardó: ${reason}. Revisa Settings → Diagnóstico.`);
         return;
       }
-      // Éxito (o sin info de retorno = legacy → asumimos OK)
+
+      // ÉXITO
       toast.success(`${items.length} ítem${items.length === 1 ? '' : 's'} guardado${items.length === 1 ? '' : 's'} ✓`);
-      setPending([]); // limpiar antes de navegar
-      nav(backDestination());
+      setPending([]);
+      // SIEMPRE navega a Dashboard (más predecible que al historial)
+      nav('/');
+    } catch (err) {
+      setCommitError(err.message || 'Error desconocido al guardar');
+      toast.error(err.message || 'Error al guardar');
     } finally {
       setCommitting(false);
     }
@@ -248,16 +261,23 @@ export default function LogFood() {
                   </li>
                 ))}
               </ul>
+              {commitError && (
+                <div className="mb-2 p-2 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs">
+                  ⚠ {commitError}
+                </div>
+              )}
               <button
                 type="button"
                 onClick={commitAll}
                 disabled={committing}
-                className="btn-lime w-full touch-manipulation"
+                className={`w-full touch-manipulation ${commitError ? 'btn-danger' : 'btn-lime'}`}
                 style={{ touchAction: 'manipulation' }}
               >
                 {committing
                   ? <><Loader2 size={18} className="animate-spin" /> Guardando…</>
-                  : <><Check size={18} /> Añadir al diario</>}
+                  : commitError
+                    ? <><Check size={18} /> Reintentar</>
+                    : <><Check size={18} /> Añadir al diario</>}
               </button>
             </div>
           </motion.div>

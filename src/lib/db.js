@@ -792,20 +792,58 @@ export async function runDiagnostic() {
     }
   }
 
-  // 3) Test de escritura: insertar y borrar inmediatamente un water_log (operación liviana)
+  // 3) Test de escritura completo: water_logs + food_entries (la tabla "problema")
+  // Si food_entries falla mientras water_logs pasa, hay RLS específica rota.
   if (result.authOk && result.userId) {
-    const probeDate = '1970-01-01'; // fecha mítica que no choca con datos reales
+    const probeDate = '1970-01-01';
+
+    // 3a) water_logs (test base)
     try {
-      const { error: upErr } = await supabase
+      const { data, error } = await supabase
         .from('water_logs')
-        .upsert({ user_id: result.userId, date: probeDate, ml: 1 }, { onConflict: 'user_id,date' });
-      if (upErr) throw upErr;
-      // Limpieza inmediata
+        .upsert({ user_id: result.userId, date: probeDate, ml: 1 }, { onConflict: 'user_id,date' })
+        .select();
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error('0 filas devueltas (RLS silenciosa)');
       await supabase.from('water_logs').delete().eq('user_id', result.userId).eq('date', probeDate);
       result.writeOk = true;
     } catch (e) {
       result.writeError = e.message;
     }
+
+    // 3b) food_entries (test específico — esta es la tabla que reporta el bug)
+    const probeId = '00000000-0000-0000-0000-' + Date.now().toString(16).padStart(12, '0').slice(-12);
+    try {
+      const { data, error } = await supabase
+        .from('food_entries')
+        .upsert({
+          id: probeId,
+          user_id: result.userId,
+          date: probeDate,
+          name: '__diagnostic_probe__',
+          meal: 'Desayuno',
+          kcal: 0
+        }, { onConflict: 'id' })
+        .select();
+      if (error) throw error;
+      if (!data || data.length === 0) throw new Error('0 filas devueltas (RLS bloqueó silenciosamente)');
+      // Limpieza
+      await supabase.from('food_entries').delete().eq('id', probeId);
+      result.foodEntriesWriteOk = true;
+    } catch (e) {
+      result.foodEntriesWriteError = e.message;
+      result.foodEntriesWriteOk = false;
+    }
+  }
+
+  // 4) localStorage quota (estimate)
+  if (typeof navigator !== 'undefined' && navigator.storage?.estimate) {
+    try {
+      const est = await navigator.storage.estimate();
+      result.storageUsedMB  = Math.round((est.usage  || 0) / 1024 / 1024 * 10) / 10;
+      result.storageQuotaMB = Math.round((est.quota  || 0) / 1024 / 1024);
+      result.storageNearLimit = est.usage / est.quota > 0.85;
+    } catch { /* noop */ }
   }
 
   return result;

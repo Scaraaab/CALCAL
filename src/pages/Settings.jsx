@@ -118,9 +118,21 @@ export default function Settings() {
               ))}
               <DiagRow
                 ok={diag.writeOk}
-                label="Escritura"
-                detail={diag.writeOk ? 'OK (test write+delete)' : (diag.writeError || 'no probada')}
+                label="Escritura water_logs"
+                detail={diag.writeOk ? 'OK' : (diag.writeError || 'no probada')}
               />
+              <DiagRow
+                ok={diag.foodEntriesWriteOk}
+                label="Escritura food_entries"
+                detail={diag.foodEntriesWriteOk ? 'OK' : (diag.foodEntriesWriteError || 'no probada')}
+              />
+              {diag.storageUsedMB != null && (
+                <DiagRow
+                  ok={!diag.storageNearLimit}
+                  label="Storage local"
+                  detail={`${diag.storageUsedMB}MB usados de ${diag.storageQuotaMB}MB`}
+                />
+              )}
               {!supabaseConfig.hasUrl && (
                 <p className="text-amber-300 text-[11px] mt-2">
                   ⚠ Falta env var en Vercel. Settings → Environment Variables → añade VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY y redeploy.
@@ -131,9 +143,20 @@ export default function Settings() {
                   ⚠ Sin sesión. Cierra sesión (Profile → Cerrar sesión) y vuelve a entrar con Google.
                 </p>
               )}
+              {diag.authOk && diag.writeOk && !diag.foodEntriesWriteOk && (
+                <p className="text-rose-300 text-[11px] mt-2 font-semibold">
+                  ⚠ water_logs funciona pero food_entries NO. La RLS de food_entries está rota.
+                  Re-ejecuta el bloque RLS de schema.sql (drop policy if exists + create policy).
+                </p>
+              )}
               {diag.authOk && !diag.writeOk && diag.writeError && (
                 <p className="text-rose-300 text-[11px] mt-2">
                   ⚠ Auth OK pero la escritura falla. Probable: RLS rota o schema incompleto. Re-ejecuta supabase/schema.sql.
+                </p>
+              )}
+              {diag.storageNearLimit && (
+                <p className="text-amber-300 text-[11px] mt-2">
+                  ⚠ localStorage al {Math.round(100 * diag.storageUsedMB / diag.storageQuotaMB)}% — puede causar pérdida de datos. Las fotos grandes en comidas/ingredientes son la causa más común.
                 </p>
               )}
             </div>

@@ -10,16 +10,16 @@ const ICONS = {
 };
 
 const STYLES = {
-  success: 'bg-emerald-600/95 border-emerald-400/60 text-white',
-  error:   'bg-rose-600/95 border-rose-400/60 text-white',
-  warn:    'bg-amber-500/95 border-amber-300/60 text-ink-950',
-  info:    'bg-brand-600/95 border-brand-400/60 text-white'
+  success: 'bg-emerald-600 border-emerald-400 text-white',
+  error:   'bg-rose-600 border-rose-400 text-white',
+  warn:    'bg-amber-500 border-amber-300 text-ink-950',
+  info:    'bg-brand-600 border-brand-400 text-white'
 };
 
 /**
- * Capa de notificaciones global. Se monta una sola vez en App.jsx.
- * z-[100] está por encima de cualquier otro elemento (BottomNav z-30,
- * Sheets z-50, pending bar z-40).
+ * Capa de notificaciones global. Aparece ARRIBA de la BottomNav (z-[100] —
+ * por encima de todo). Posicionada justo encima del FAB para máxima visibilidad
+ * sin tapar el contenido.
  */
 export default function Toast() {
   const toasts = useToastStore((s) => s.toasts);
@@ -28,31 +28,31 @@ export default function Toast() {
   return (
     <div
       className="fixed inset-x-0 z-[100] px-3 pointer-events-none"
-      style={{ top: 'max(0.5rem, env(safe-area-inset-top))' }}
+      style={{ bottom: 'calc(6.5rem + env(safe-area-inset-bottom))' }}
     >
-      <div className="max-w-md mx-auto space-y-2">
+      <div className="max-w-md mx-auto space-y-2 flex flex-col-reverse">
         <AnimatePresence>
           {toasts.map((t) => {
             const Icon = ICONS[t.type] || Info;
             return (
               <motion.div
                 key={t.id}
-                initial={{ y: -60, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                exit={{ y: -60, opacity: 0 }}
+                initial={{ y: 60, opacity: 0, scale: 0.95 }}
+                animate={{ y: 0, opacity: 1, scale: 1 }}
+                exit={{ y: 60, opacity: 0, scale: 0.95 }}
                 transition={{ type: 'spring', stiffness: 380, damping: 32 }}
-                className={`pointer-events-auto rounded-2xl px-4 py-3 shadow-card backdrop-blur-xl border flex items-start gap-3 ${STYLES[t.type] || STYLES.info}`}
+                className={`pointer-events-auto rounded-2xl px-4 py-3.5 shadow-card border-2 flex items-start gap-3 ${STYLES[t.type] || STYLES.info}`}
               >
-                <Icon size={18} className="flex-none mt-0.5" />
-                <p className="flex-1 text-sm leading-snug whitespace-pre-line">{t.message}</p>
+                <Icon size={20} className="flex-none mt-0.5" strokeWidth={2.5} />
+                <p className="flex-1 text-sm font-medium leading-snug whitespace-pre-line">{t.message}</p>
                 <button
                   type="button"
                   onClick={() => dismiss(t.id)}
-                  className="opacity-70 hover:opacity-100 flex-none touch-manipulation"
+                  className="opacity-70 hover:opacity-100 flex-none touch-manipulation -mr-1"
                   style={{ touchAction: 'manipulation' }}
                   aria-label="Cerrar"
                 >
-                  <X size={16} />
+                  <X size={18} />
                 </button>
               </motion.div>
             );
