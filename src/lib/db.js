@@ -185,22 +185,47 @@ export async function fetchEntries() {
 }
 
 export async function upsertEntry(date, entry) {
-  if (!isSupabaseConfigured) return;
+  if (!isSupabaseConfigured) return { ok: false, reason: 'no-supabase' };
   const userId = await currentUserId();
-  if (!userId) { toast.error('No autenticado. La comida no se guardó.'); return; }
-  const { error } = await supabase
+  if (!userId) { toast.error('No autenticado. La comida no se guardó.'); return { ok: false, reason: 'no-auth' }; }
+  const row = entryToRow(userId, entry, date);
+  const { data, error } = await supabase
     .from('food_entries')
-    .upsert(entryToRow(userId, entry, date), { onConflict: 'id' });
-  if (error) { warn('upsertEntry', error); reportWriteError('comida', error); }
+    .upsert(row, { onConflict: 'id' })
+    .select(); // confirma que la fila quedó (RLS no bloqueó silenciosamente)
+  if (error) {
+    warn('upsertEntry', error);
+    reportWriteError('comida', error);
+    return { ok: false, reason: 'rpc-error', error };
+  }
+  if (!data || data.length === 0) {
+    warn('upsertEntry: 0 filas devueltas (RLS bloqueó silenciosamente)', row);
+    toast.error('La comida no quedó guardada (RLS rechazó). Revisa Settings → Diagnóstico.', 10000);
+    return { ok: false, reason: 'no-rows' };
+  }
+  return { ok: true, data };
 }
 
 export async function upsertEntries(date, entries) {
-  if (!isSupabaseConfigured || !entries?.length) return;
+  if (!isSupabaseConfigured || !entries?.length) return { ok: false, reason: 'no-supabase' };
   const userId = await currentUserId();
-  if (!userId) { toast.error('No autenticado. Las comidas no se guardaron.'); return; }
+  if (!userId) { toast.error('No autenticado. Las comidas no se guardaron.'); return { ok: false, reason: 'no-auth' }; }
   const rows = entries.map((e) => entryToRow(userId, e, date));
-  const { error } = await supabase.from('food_entries').upsert(rows, { onConflict: 'id' });
-  if (error) { warn('upsertEntries', error); reportWriteError('comidas', error); }
+  const { data, error } = await supabase
+    .from('food_entries')
+    .upsert(rows, { onConflict: 'id' })
+    .select(); // confirma que las filas quedaron
+  if (error) {
+    warn('upsertEntries', error);
+    reportWriteError('comidas', error);
+    return { ok: false, reason: 'rpc-error', error };
+  }
+  if (!data || data.length === 0) {
+    warn('upsertEntries: 0 filas devueltas (RLS bloqueó silenciosamente)', { rowCount: rows.length });
+    toast.error('Las comidas no quedaron guardadas (RLS rechazó). Revisa Settings → Diagnóstico.', 10000);
+    return { ok: false, reason: 'no-rows' };
+  }
+  return { ok: true, data, count: data.length };
 }
 
 export async function removeEntry(entryId) {

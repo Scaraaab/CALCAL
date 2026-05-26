@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Check, Sparkles, Search, Heart, Camera, UtensilsCrossed, CalendarClock, Coffee, Soup, Cookie, Utensils, Trash2 } from 'lucide-react';
+import { Check, Sparkles, Search, Heart, Camera, UtensilsCrossed, CalendarClock, Coffee, Soup, Cookie, Utensils, Trash2, Loader2 } from 'lucide-react';
 import Header from '../components/layout/Header';
 import NaturalInput from '../components/food/NaturalInput';
 import FoodSearch from '../components/food/FoodSearch';
@@ -9,6 +9,7 @@ import PhotoLog from '../components/food/PhotoLog';
 import SavedMealsRow from '../components/food/SavedMealsRow';
 import SavedMealPicker from '../components/food/SavedMealPicker';
 import { useFoodStore } from '../store/useFoodStore';
+import { toast } from '../store/useToastStore';
 import { fmtNum } from '../utils/format';
 import { todayISO, isValidISO, formatHuman } from '../utils/date';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -44,6 +45,7 @@ export default function LogFood() {
   const [pending, setPending] = useState([]);
   const [mode, setMode] = useState('texto');
   const [pickerMeal, setPickerMeal] = useState(null);
+  const [committing, setCommitting] = useState(false);
 
   function backDestination() {
     return isAnotherDay ? `/history?date=${targetDate}` : '/';
@@ -53,10 +55,29 @@ export default function LogFood() {
     setPending((p) => [...p, ...items]);
   }
 
-  function commitAll() {
-    if (!pending.length) return;
-    addEntries(pending.map((it) => ({ ...it, meal })), targetDate);
-    nav(backDestination());
+  /**
+   * AWAIT a la escritura antes de navegar. Si Supabase responde con error o
+   * RLS bloquea, NO navegamos y dejamos el pending list intacto para que el
+   * user pueda reintentar tras corregir el problema (visto en el toast).
+   */
+  async function commitAll() {
+    if (!pending.length || committing) return;
+    setCommitting(true);
+    try {
+      const items = pending.map((it) => ({ ...it, meal }));
+      const res = await addEntries(items, targetDate);
+      // Si upsertEntries devuelve ok:false, el toast ya se mostró desde db.js
+      if (res && res.ok === false) {
+        // No navegar — el user ve el toast y puede revisar/reintentar
+        return;
+      }
+      // Éxito (o sin info de retorno = legacy → asumimos OK)
+      toast.success(`${items.length} ítem${items.length === 1 ? '' : 's'} guardado${items.length === 1 ? '' : 's'} ✓`);
+      setPending([]); // limpiar antes de navegar
+      nav(backDestination());
+    } finally {
+      setCommitting(false);
+    }
   }
 
   function removePending(idx) {
@@ -230,10 +251,13 @@ export default function LogFood() {
               <button
                 type="button"
                 onClick={commitAll}
+                disabled={committing}
                 className="btn-lime w-full touch-manipulation"
                 style={{ touchAction: 'manipulation' }}
               >
-                <Check size={18} /> Añadir al diario
+                {committing
+                  ? <><Loader2 size={18} className="animate-spin" /> Guardando…</>
+                  : <><Check size={18} /> Añadir al diario</>}
               </button>
             </div>
           </motion.div>

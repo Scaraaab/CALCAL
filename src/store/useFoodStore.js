@@ -53,7 +53,8 @@ export const useFoodStore = create(
         }));
         set((s) => ({ entries: { ...s.entries, [date]: [...(s.entries[date] || []), ...stamped] } }));
         get()._bumpStreak(date);
-        db.upsertEntries(date, stamped);
+        // Devolvemos la promesa para que el caller pueda awaitar antes de navegar
+        return db.upsertEntries(date, stamped);
       },
 
       removeEntry: (id, date) => {
