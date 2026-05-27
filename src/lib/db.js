@@ -35,32 +35,66 @@ function isLoadFailedError(error) {
 }
 
 /**
- * Upsert genérico con retry sin foto si el primer intento falla con "Load failed".
+ * Upsert genérico con retry agresivo para iOS PWA. Estrategia:
+ *  1. Intento normal con todo el row.
+ *  2. Si falla con "Load failed", espera 400ms y reintenta igual (la causa
+ *     más común en iOS son POSTs concurrentes — un segundo intento solo ya
+ *     suele pasar).
+ *  3. Si vuelve a fallar y hay foto, reintenta sin foto.
+ *  4. Si TODOS fallan, hace GET por PK para detectar false negative
+ *     (el row se insertó pero la respuesta se perdió).
+ *
  * @param {string} table
- * @param {object} row - fila a upsertar (puede tener .photo)
- * @param {object} opts - { onConflict, withSelect }
- * @returns {Promise<{data, error}>}
+ * @param {object} row
+ * @param {object} opts - { onConflict, withSelect, pkField }
  */
 async function upsertWithPhotoFallback(table, row, opts = {}) {
-  const { onConflict = 'id', withSelect = false } = opts;
+  const { onConflict = 'id', withSelect = false, pkField = 'id' } = opts;
   const bytes = rowBytes(row);
   if (bytes > 80_000) {
     warn(`upsert ${table}: payload grande (${Math.round(bytes / 1024)}KB) — puede fallar en iOS`);
   }
 
-  let q = supabase.from(table).upsert(row, { onConflict });
-  if (withSelect) q = q.select();
-  let result = await q;
+  const runUpsert = async (r) => {
+    let q = supabase.from(table).upsert(r, { onConflict });
+    if (withSelect) q = q.select();
+    return q;
+  };
 
-  // Si falla con "Load failed" y la fila tenía foto, reintenta sin foto.
+  // 1. Intento normal
+  let result = await runUpsert(row);
+
+  // 2. Retry plano si Load failed (sin tocar el row)
+  if (result.error && isLoadFailedError(result.error)) {
+    warn(`upsert ${table}: "Load failed" — retry en 400ms`);
+    await new Promise((r) => setTimeout(r, 400));
+    result = await runUpsert(row);
+  }
+
+  // 3. Retry sin foto si todavía falla con Load failed
   if (result.error && isLoadFailedError(result.error) && row.photo) {
-    warn(`upsert ${table}: "Load failed" con foto (${Math.round(bytes / 1024)}KB), reintentando sin foto`);
+    warn(`upsert ${table}: "Load failed" persiste — retry sin foto`);
     const rowNoPhoto = { ...row, photo: null };
-    let q2 = supabase.from(table).upsert(rowNoPhoto, { onConflict });
-    if (withSelect) q2 = q2.select();
-    result = await q2;
-    if (!result.error) {
-      result.photoDropped = true;
+    result = await runUpsert(rowNoPhoto);
+    if (!result.error) result.photoDropped = true;
+  }
+
+  // 4. Verificación de false negative — el server pudo haber insertado pero
+  //    la respuesta se perdió. iOS PWA es notoriamente buggy con esto.
+  if (result.error && isLoadFailedError(result.error) && row[pkField]) {
+    warn(`upsert ${table}: verificando si el row se insertó pese al error`);
+    try {
+      const { data: existing } = await supabase
+        .from(table)
+        .select(pkField)
+        .eq(pkField, row[pkField])
+        .maybeSingle();
+      if (existing) {
+        warn(`upsert ${table}: FALSE NEGATIVE confirmado — row existe`);
+        return { data: withSelect ? [existing] : null, error: null, falseNegative: true };
+      }
+    } catch (e) {
+      warn(`upsert ${table}: verificación post-error falló`, e);
     }
   }
   return result;
@@ -625,21 +659,41 @@ export async function pushCommunityIngredient(ing, userName) {
   const userId = await currentUserId();
   if (!userId) return;
   const row = communityIngredientToRow(ing, userId, userName);
-  // ignoreDuplicates → onConflict no se usa para update sino para evitar conflicto.
-  // El retry sin foto aquí también ayuda: si la versión personal pudo guardarse
-  // pero la community falla por foto pesada, al menos quedará la community sin foto.
   const bytes = rowBytes(row);
   if (bytes > 80_000) {
     warn(`pushCommunityIngredient: payload grande (${Math.round(bytes / 1024)}KB)`);
   }
-  let { error } = await supabase
+
+  const doUpsert = (r) => supabase
     .from('community_ingredients')
-    .upsert(row, { onConflict: 'share_id', ignoreDuplicates: true });
+    .upsert(r, { onConflict: 'share_id', ignoreDuplicates: true });
+
+  let { error } = await doUpsert(row);
+
+  // Retry plano (iOS POST concurrente bug)
+  if (error && isLoadFailedError(error)) {
+    warn(`pushCommunityIngredient: "Load failed" — retry en 400ms`);
+    await new Promise((r) => setTimeout(r, 400));
+    ({ error } = await doUpsert(row));
+  }
+  // Retry sin foto si persiste
   if (error && isLoadFailedError(error) && row.photo) {
-    warn(`pushCommunityIngredient: "Load failed" con foto, reintentando sin foto`);
-    ({ error } = await supabase
-      .from('community_ingredients')
-      .upsert({ ...row, photo: null }, { onConflict: 'share_id', ignoreDuplicates: true }));
+    warn(`pushCommunityIngredient: "Load failed" persiste — retry sin foto`);
+    ({ error } = await doUpsert({ ...row, photo: null }));
+  }
+  // Verificación post-error: ¿se insertó pese al fallo?
+  if (error && isLoadFailedError(error)) {
+    try {
+      const { data: existing } = await supabase
+        .from('community_ingredients')
+        .select('share_id')
+        .eq('share_id', row.share_id)
+        .maybeSingle();
+      if (existing) {
+        warn(`pushCommunityIngredient: FALSE NEGATIVE — ya existe en community`);
+        return; // tratamos como éxito
+      }
+    } catch { /* noop */ }
   }
   if (error) { warn('pushCommunityIngredient', error); throw error; }
 }
@@ -653,14 +707,34 @@ export async function pushCommunityMeal(meal, userName) {
   if (bytes > 80_000) {
     warn(`pushCommunityMeal: payload grande (${Math.round(bytes / 1024)}KB)`);
   }
-  let { error } = await supabase
+
+  const doUpsert = (r) => supabase
     .from('community_meals')
-    .upsert(row, { onConflict: 'share_id', ignoreDuplicates: true });
+    .upsert(r, { onConflict: 'share_id', ignoreDuplicates: true });
+
+  let { error } = await doUpsert(row);
+
+  if (error && isLoadFailedError(error)) {
+    warn(`pushCommunityMeal: "Load failed" — retry en 400ms`);
+    await new Promise((r) => setTimeout(r, 400));
+    ({ error } = await doUpsert(row));
+  }
   if (error && isLoadFailedError(error) && row.photo) {
-    warn(`pushCommunityMeal: "Load failed" con foto, reintentando sin foto`);
-    ({ error } = await supabase
-      .from('community_meals')
-      .upsert({ ...row, photo: null }, { onConflict: 'share_id', ignoreDuplicates: true }));
+    warn(`pushCommunityMeal: "Load failed" persiste — retry sin foto`);
+    ({ error } = await doUpsert({ ...row, photo: null }));
+  }
+  if (error && isLoadFailedError(error)) {
+    try {
+      const { data: existing } = await supabase
+        .from('community_meals')
+        .select('share_id')
+        .eq('share_id', row.share_id)
+        .maybeSingle();
+      if (existing) {
+        warn(`pushCommunityMeal: FALSE NEGATIVE — ya existe en community`);
+        return;
+      }
+    } catch { /* noop */ }
   }
   if (error) { warn('pushCommunityMeal', error); throw error; }
 }

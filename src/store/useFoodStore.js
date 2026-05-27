@@ -158,6 +158,11 @@ export const useFoodStore = create(
       clearShopping: () => set({ shoppingList: [] }),
 
       // ============ CUSTOM INGREDIENTS ============
+      //
+      // IMPORTANTE: upsert a personal Y push a community se hacen
+      // SECUENCIALMENTE, no en paralelo. iOS Safari + PWA standalone tiene un
+      // bug con POSTs paralelos al mismo host: uno (típicamente el segundo)
+      // falla con "TypeError: Load failed". Encadenar con await arregla esto.
       addIngredient: (ing) => {
         const clean = {
           id: uuid(),
@@ -176,12 +181,20 @@ export const useFoodStore = create(
         };
         if (!clean.name) return null;
         set((s) => ({ customIngredients: [clean, ...s.customIngredients] }));
-        // Personal + community (fire-and-forget; los errores se loggean dentro)
-        db.upsertIngredient(clean).then((res) => {
-          if (!res?.ok) logErr(`addIngredient → Supabase FALLÓ (${res?.reason})`, res);
-        }).catch((err) => logErr('addIngredient → personal upsert rejected', err));
-        db.pushCommunityIngredient(clean, get()._communityUserName || '')
-          .catch((err) => logErr('addIngredient → community push rejected', err));
+        // Secuencial. Si el personal falla, NO publicamos a community (más
+        // limpio: no queremos huérfanos en community sin copia personal).
+        (async () => {
+          try {
+            const res = await db.upsertIngredient(clean);
+            if (!res?.ok) {
+              logErr(`addIngredient → Supabase FALLÓ (${res?.reason})`, res);
+              return;
+            }
+            await db.pushCommunityIngredient(clean, get()._communityUserName || '');
+          } catch (err) {
+            logErr('addIngredient → upsert/push rejected', err);
+          }
+        })();
         return clean;
       },
       updateIngredient: (id, patch) => {
@@ -194,10 +207,15 @@ export const useFoodStore = create(
           })
         }));
         if (updated) {
-          db.upsertIngredient(updated);
-          // Propaga edición a community si tiene shareId. RLS filtra: solo el
-          // creador puede actualizar; para otros usuarios es un no-op silencioso.
-          if (updated.shareId) db.updateCommunityIngredient(updated);
+          // Secuencial por el mismo motivo (iOS paralelo bug).
+          (async () => {
+            try {
+              await db.upsertIngredient(updated);
+              if (updated.shareId) await db.updateCommunityIngredient(updated);
+            } catch (err) {
+              logErr('updateIngredient → upsert/update community rejected', err);
+            }
+          })();
         }
       },
       removeIngredient: (id) => {
@@ -238,10 +256,16 @@ export const useFoodStore = create(
           createdAt: Date.now()
         };
         set((s) => ({ customMeals: [clean, ...s.customMeals] }));
-        db.upsertMeal(clean);
-        // Publicar a community (fire-and-forget)
+        // Secuencial (iOS paralelo POST bug)
         const userName = get()._communityUserName || '';
-        db.pushCommunityMeal(clean, userName);
+        (async () => {
+          try {
+            await db.upsertMeal(clean);
+            await db.pushCommunityMeal(clean, userName);
+          } catch (err) {
+            logErr('addMeal → upsert/push rejected', err);
+          }
+        })();
         return clean;
       },
       updateMeal: (id, patch) => {
@@ -258,8 +282,15 @@ export const useFoodStore = create(
           })
         }));
         if (updated) {
-          db.upsertMeal(updated);
-          if (updated.shareId) db.updateCommunityMeal(updated);
+          // Secuencial (iOS paralelo POST bug)
+          (async () => {
+            try {
+              await db.upsertMeal(updated);
+              if (updated.shareId) await db.updateCommunityMeal(updated);
+            } catch (err) {
+              logErr('updateMeal → upsert/update community rejected', err);
+            }
+          })();
         }
       },
 
