@@ -227,7 +227,10 @@ function IngredientForm({ form, setForm }) {
     if (!file) return;
     setPhotoBusy(true);
     try {
-      const { dataUrl } = await compressImage(file, { maxSize: 480, quality: 0.7 });
+      // Compresión agresiva: la foto de ingrediente se muestra como thumbnail
+      // (avatar pequeño) o hero card. 360px @ 0.62 da ~25-40KB base64, suficiente
+      // para que el POST a Supabase no falle con "Load failed" en iOS PWA.
+      const { dataUrl } = await compressImage(file, { maxSize: 360, quality: 0.62 });
       setForm((f) => ({ ...f, photo: dataUrl }));
     } catch (err) {
       alert(err.message);

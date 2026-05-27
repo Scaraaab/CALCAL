@@ -17,6 +17,55 @@ function warn(label, err) {
   console.warn('[db]', label, err?.message || err);
 }
 
+/**
+ * Tamaño aproximado en bytes de una fila lista para POST. Útil para
+ * diagnosticar "Load failed" en iOS PWA cuando el body es grande.
+ */
+function rowBytes(row) {
+  try { return JSON.stringify(row).length; } catch { return 0; }
+}
+
+/**
+ * Detecta errores de iOS Safari/PWA que típicamente se resuelven reintentando
+ * sin la foto. iOS rechaza POSTs con body grande con "Load failed" sin más info.
+ */
+function isLoadFailedError(error) {
+  const msg = String(error?.message || error || '');
+  return /Load failed/i.test(msg) || /network/i.test(msg) || /timed? ?out/i.test(msg);
+}
+
+/**
+ * Upsert genérico con retry sin foto si el primer intento falla con "Load failed".
+ * @param {string} table
+ * @param {object} row - fila a upsertar (puede tener .photo)
+ * @param {object} opts - { onConflict, withSelect }
+ * @returns {Promise<{data, error}>}
+ */
+async function upsertWithPhotoFallback(table, row, opts = {}) {
+  const { onConflict = 'id', withSelect = false } = opts;
+  const bytes = rowBytes(row);
+  if (bytes > 80_000) {
+    warn(`upsert ${table}: payload grande (${Math.round(bytes / 1024)}KB) — puede fallar en iOS`);
+  }
+
+  let q = supabase.from(table).upsert(row, { onConflict });
+  if (withSelect) q = q.select();
+  let result = await q;
+
+  // Si falla con "Load failed" y la fila tenía foto, reintenta sin foto.
+  if (result.error && isLoadFailedError(result.error) && row.photo) {
+    warn(`upsert ${table}: "Load failed" con foto (${Math.round(bytes / 1024)}KB), reintentando sin foto`);
+    const rowNoPhoto = { ...row, photo: null };
+    let q2 = supabase.from(table).upsert(rowNoPhoto, { onConflict });
+    if (withSelect) q2 = q2.select();
+    result = await q2;
+    if (!result.error) {
+      result.photoDropped = true;
+    }
+  }
+  return result;
+}
+
 async function currentUserId() {
   if (!supabase) return null;
   const { data } = await supabase.auth.getSession();
@@ -375,10 +424,9 @@ export async function upsertIngredient(ing) {
     return { ok: false, reason: 'no-auth' };
   }
   const row = ingredientToRow(userId, ing);
-  const { data, error } = await supabase
-    .from('custom_ingredients')
-    .upsert(row, { onConflict: 'id' })
-    .select(); // verifica que pasó RLS
+  const { data, error, photoDropped } = await upsertWithPhotoFallback(
+    'custom_ingredients', row, { onConflict: 'id', withSelect: true }
+  );
   if (error) {
     warn('upsertIngredient', error);
     reportWriteError('ingrediente', error);
@@ -389,7 +437,10 @@ export async function upsertIngredient(ing) {
     toast.error('Supabase no devolvió la fila guardada. Posible bloqueo de RLS.');
     return { ok: false, reason: 'no-rows', data };
   }
-  return { ok: true, data };
+  if (photoDropped) {
+    toast.warn('Ingrediente guardado sin foto (la foto era demasiado pesada).', 6000);
+  }
+  return { ok: true, data, photoDropped };
 }
 
 export async function removeIngredient(id) {
@@ -447,10 +498,14 @@ export async function upsertMeal(meal) {
   if (!isSupabaseConfigured) return;
   const userId = await currentUserId();
   if (!userId) { toast.error('No autenticado. La comida no se guardó.'); return; }
-  const { error } = await supabase
-    .from('custom_meals')
-    .upsert(mealToRow(userId, meal), { onConflict: 'id' });
-  if (error) { warn('upsertMeal', error); reportWriteError('comida compuesta', error); }
+  const row = mealToRow(userId, meal);
+  const { error, photoDropped } = await upsertWithPhotoFallback(
+    'custom_meals', row, { onConflict: 'id', withSelect: false }
+  );
+  if (error) { warn('upsertMeal', error); reportWriteError('comida compuesta', error); return; }
+  if (photoDropped) {
+    toast.warn('Comida guardada sin foto (la foto era demasiado pesada).', 6000);
+  }
 }
 
 export async function removeMeal(id) {
@@ -569,12 +624,23 @@ export async function pushCommunityIngredient(ing, userName) {
   if (!isSupabaseConfigured || !ing?.shareId) return;
   const userId = await currentUserId();
   if (!userId) return;
-  const { error } = await supabase
+  const row = communityIngredientToRow(ing, userId, userName);
+  // ignoreDuplicates → onConflict no se usa para update sino para evitar conflicto.
+  // El retry sin foto aquí también ayuda: si la versión personal pudo guardarse
+  // pero la community falla por foto pesada, al menos quedará la community sin foto.
+  const bytes = rowBytes(row);
+  if (bytes > 80_000) {
+    warn(`pushCommunityIngredient: payload grande (${Math.round(bytes / 1024)}KB)`);
+  }
+  let { error } = await supabase
     .from('community_ingredients')
-    .upsert(communityIngredientToRow(ing, userId, userName), {
-      onConflict: 'share_id',
-      ignoreDuplicates: true
-    });
+    .upsert(row, { onConflict: 'share_id', ignoreDuplicates: true });
+  if (error && isLoadFailedError(error) && row.photo) {
+    warn(`pushCommunityIngredient: "Load failed" con foto, reintentando sin foto`);
+    ({ error } = await supabase
+      .from('community_ingredients')
+      .upsert({ ...row, photo: null }, { onConflict: 'share_id', ignoreDuplicates: true }));
+  }
   if (error) { warn('pushCommunityIngredient', error); throw error; }
 }
 
@@ -582,12 +648,20 @@ export async function pushCommunityMeal(meal, userName) {
   if (!isSupabaseConfigured || !meal?.shareId) return;
   const userId = await currentUserId();
   if (!userId) return;
-  const { error } = await supabase
+  const row = communityMealToRow(meal, userId, userName);
+  const bytes = rowBytes(row);
+  if (bytes > 80_000) {
+    warn(`pushCommunityMeal: payload grande (${Math.round(bytes / 1024)}KB)`);
+  }
+  let { error } = await supabase
     .from('community_meals')
-    .upsert(communityMealToRow(meal, userId, userName), {
-      onConflict: 'share_id',
-      ignoreDuplicates: true
-    });
+    .upsert(row, { onConflict: 'share_id', ignoreDuplicates: true });
+  if (error && isLoadFailedError(error) && row.photo) {
+    warn(`pushCommunityMeal: "Load failed" con foto, reintentando sin foto`);
+    ({ error } = await supabase
+      .from('community_meals')
+      .upsert({ ...row, photo: null }, { onConflict: 'share_id', ignoreDuplicates: true }));
+  }
   if (error) { warn('pushCommunityMeal', error); throw error; }
 }
 
